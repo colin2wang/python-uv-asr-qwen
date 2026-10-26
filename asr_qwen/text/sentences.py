@@ -36,8 +36,8 @@ def _needs_space(left: str, right: str) -> bool:
 
 
 def _ends_sentence(piece: str) -> bool:
-    """片段是否落在句末：句末标点或换行。"""
-    return piece[-1:] in _SENTENCE_END_CHARS or piece.endswith("\n")
+    """片段是否落在句末标点上。"""
+    return piece[-1:] in _SENTENCE_END_CHARS
 
 
 def _is_valid_timestamp(value: object) -> bool:
@@ -124,39 +124,27 @@ def merge_to_sentences(
     *,
     max_chars: int,
     max_duration_seconds: float,
+    min_gap_seconds: float,
 ) -> list[dict[str, object]]:
-    """Group timestamped ASR tokens into whole sentences, keeping the timeline.
+    """Group timestamped ASR tokens into sentences, keeping the timeline.
 
     The aligner tokens are the source of truth. The model's whole-text field can
     contain normalization differences and punctuation absent from the token
     stream; attempting to walk both pointers simultaneously can desynchronize
     them and produce null timestamps after one mismatch.
 
-    断句只发生在自然句末（句末标点或换行），避免把没有标点的句子（如英文歌词）
-    按长度切断；时间戳倒流时才强制断开。max_chars / max_duration_seconds 是兜底
-    上限，两者为 0 表示不限制。
+    断句条件：字符数达 max_chars、时长达 max_duration_seconds、句末标点
+    （_ends_sentence）、时间戳倒流；min_gap_seconds > 0 时相邻 token 的停顿也断句。
+    max_chars / max_duration_seconds / min_gap_seconds 为 0 时该项不生效。
     """
-    char_segments = _repair_invalid_timestamps(list(char_segments))
+    tokens = _ordered_tokens(char_segments)
     sentences: list[dict[str, object]] = []
     # 每个元素为 (片段, 是否与前一片段之间补空格)
     parts: list[tuple[str, bool]] = []
     sentence_start: float | None = None
     sentence_end: float | None = None
 
-    for raw_segment in char_segments:
-        if not isinstance(raw_segment, dict):
-            continue
-        start = raw_segment.get("start")
-        end = raw_segment.get("end")
-        token = str(raw_segment.get("text") or "")
-        if not token or not _is_valid_timestamp(start) or not _is_valid_timestamp(end):
-            continue
-
-        start = float(start)
-        end = float(end)
-        if end < start:
-            start, end = end, start
-
+    for index, (token, start, end) in enumerate(tokens):
         current_chars = sum(len(piece) for piece, _ in parts)
         current_duration = end - sentence_start if sentence_start is not None else 0.0
         should_break = bool(parts) and (
@@ -190,13 +178,32 @@ def merge_to_sentences(
             remaining = remaining[available:]
             is_head = False
 
-        if parts and _ends_sentence(parts[-1][0]):
+        # 句边界：句末标点/换行，或与后续 token 之间的停顿达到阈值
+        gap = tokens[index + 1][1] - end if index + 1 < len(tokens) else 0.0
+        if parts and (
+            _ends_sentence(parts[-1][0]) or (min_gap_seconds > 0 and gap >= min_gap_seconds)
+        ):
             _flush(sentences, parts, sentence_start, sentence_end)
             sentence_start = None
             sentence_end = None
 
     _flush(sentences, parts, sentence_start, sentence_end)
     return sentences
+
+
+def _ordered_tokens(char_segments: Iterable[dict[str, object]]) -> list[tuple[str, float, float]]:
+    """取出文本非空、时间戳合法的 token，按 (文本, 起始, 结束) 排列。"""
+    tokens: list[tuple[str, float, float]] = []
+    for record in _repair_invalid_timestamps(list(char_segments)):
+        token = str(record.get("text") or "")
+        start = record.get("start")
+        end = record.get("end")
+        if not token or not _is_valid_timestamp(start) or not _is_valid_timestamp(end):
+            continue
+        start = float(start)
+        end = float(end)
+        tokens.append((token, min(start, end), max(start, end)))
+    return tokens
 
 
 def number_segments(sentences: Iterable[dict[str, object]]) -> list[dict[str, Any]]:

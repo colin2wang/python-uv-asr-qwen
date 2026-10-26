@@ -99,6 +99,7 @@ def build_settings(data: Mapping[str, Any], config_path: Path) -> Settings:
             max_chunk_seconds=_as_int(audio, "max_chunk_seconds", "audio", source),
         ),
         sentence=SentenceSettings(
+            min_gap_seconds=_as_float(sentence, "min_gap_seconds", "sentence", source),
             max_chars=_as_int(sentence, "max_chars", "sentence", source),
             max_duration_seconds=_as_float(sentence, "max_duration_seconds", "sentence", source),
         ),

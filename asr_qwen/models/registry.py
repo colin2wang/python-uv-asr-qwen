@@ -71,7 +71,15 @@ class ModelRegistry:
             return
         try:
             from funasr import AutoModel
-
+        except ImportError as exc:
+            self._lid = None
+            logger.warning(
+                "SenseVoice LID 依赖缺失（%s）：执行 uv sync --extra lid 安装，"
+                "或把 asr-qwen.yml 的 lid.enabled 设为 false；转写不依赖该模型",
+                exc,
+            )
+            return
+        try:
             self._lid = AutoModel(
                 model=str(lid_settings.model_path),
                 disable_update=True,

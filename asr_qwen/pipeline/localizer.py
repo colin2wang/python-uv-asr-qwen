@@ -77,6 +77,7 @@ def localize(
             transcript.segments,
             max_chars=settings.sentence.max_chars,
             max_duration_seconds=settings.sentence.max_duration_seconds,
+            min_gap_seconds=settings.sentence.min_gap_seconds,
         )
     )
     if progress:

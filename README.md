@@ -10,14 +10,16 @@ and a title/body split.
 ## Features
 
 - **Multi-language transcription** with Qwen3-ASR-1.7B (roughly 30 languages) on GPU.
-- **Whole sentences, timestamps intact**: forced-aligner tokens are merged into
-  segments that break **only at natural sentence ends** (sentence-ending punctuation
-  or a newline), never by length — a lyric without punctuation stays one segment
-  instead of being chopped up. `sentence.max_chars` / `sentence.max_duration_seconds`
-  are fallbacks only, and `0` means unlimited. Invalid tokens are repaired by
-  interpolation. Latin tokens are word-level and carry no spaces, so merging
-  re-inserts them by script rule (between English words and at CJK/Latin boundaries,
-  never inside CJK or around punctuation).
+- **Segment splitting**: forced-aligner tokens are merged into segments capped by
+  `sentence.max_chars` / `sentence.max_duration_seconds` — the aligner token stream
+  carries **no punctuation** (punctuation only exists in the full text), so length and
+  duration are the reliable boundaries. Segments also break at sentence-ending
+  punctuation, and optionally on inter-token pauses via
+  `sentence.min_gap_seconds` (default `0`, off — sung vocals drag notes and produce
+  one-second fragments). Every segment carries `start` / `end`. Invalid tokens are
+  repaired by interpolation. Latin tokens are word-level and carry no spaces, so
+  merging re-inserts them by script rule (between English words and at CJK/Latin
+  boundaries, never inside CJK or around punctuation).
 - **Automatic language detection**: the model's own language output, plus a
   script-voting second pass for sung audio (Cyrillic / Han / Kana / Hangul), plus a
   Cantonese-character heuristic that promotes `Chinese` to `Cantonese`.
@@ -28,9 +30,11 @@ and a title/body split.
   `title.max_words` words); an OpenAI-compatible LLM is consulted only when the rule
   result is not obviously a title. The title is always an exact prefix of the
   transcript — never rewritten or translated.
-- **Long audio support**: vectorized energy VAD finds silence boundaries and chunks
-  audio to `audio.max_chunk_seconds`, then stitches chunk timelines back together; a
-  single speech run longer than the limit is sliced at the limit.
+- **Whole-file transcription (no chunking by default)**: the full audio goes to the
+  model in one call — chunking cuts sentences that straddle a boundary and, because
+  each chunk is transcribed in isolation, loses the context that produces sentence-
+  final punctuation. Set `audio.max_chunk_seconds` above `0` to bring back
+  "VAD silence boundaries → chunks → stitched timelines".
 - **Sync and async APIs**: `POST /asr/localize` blocks until done;
   `POST /asr/jobs` returns a job id whose stage, overall percentage, chunk counters
   and elapsed time you can poll.
@@ -45,10 +49,9 @@ and a title/body split.
 
 ```
 upload ──> audio/io.py       decode + resample to mono 16 kHz (torchaudio/torchcodec, ffmpeg fallback)
-      ──> pipeline/transcribe  short file: one pass
-                               long file: VAD speech segments → chunks ≤ max_chunk_seconds → per-chunk pass
+      ──> pipeline/transcribe  one pass over the whole file (VAD chunking only if audio.max_chunk_seconds > 0)
       ──> language/detector    normalize requested language, script-vote fallback, Cantonese check
-      ──> text/sentences      merged at sentence ends, timestamped
+      ──> text/sentences      timestamped segments (length/duration caps, punctuation & pause optional)
       ──> text/keywords       comma-separated terms → time ranges
       ──> text/title          rule split, optional LLM refinement (exact-prefix title)
 ```
@@ -126,14 +129,15 @@ Relative paths inside the file resolve against the file's own directory.
 | `lid.model_path` | SenseVoiceSmall directory |
 | `lid.device` | LID device, e.g. `cpu` |
 | `lid.segment_seconds` | Audio window used for language sampling / script voting |
-| `vad.frame_ms` / `hop_ms` | Energy analysis frame and hop size |
+| `vad.frame_ms` / `hop_ms` | Energy analysis frame and hop size (chunking mode only) |
 | `vad.threshold_db` | Speech threshold in dBFS |
 | `vad.min_silence_ms` | Gaps shorter than this are treated as speech |
 | `vad.min_speech_ms` | Speech runs shorter than this are dropped |
 | `audio.sample_rate` | Target mono sample rate (16 kHz recommended) |
-| `audio.max_chunk_seconds` | Longer audio is VAD-chunked before transcription |
-| `sentence.max_chars` | Fallback character cap per segment; `0` disables it (segments break on punctuation) |
-| `sentence.max_duration_seconds` | Fallback duration cap per segment in seconds; `0` disables it |
+| `audio.max_chunk_seconds` | `0` = send the whole file at once (default); `> 0` = VAD-chunk audio longer than this |
+| `sentence.min_gap_seconds` | Inter-token pause that ends a segment; `0` disables it (sung vocals produce fragments) |
+| `sentence.max_chars` | Max characters per segment; `0` means unlimited |
+| `sentence.max_duration_seconds` | Max duration per segment in seconds; `0` means unlimited |
 | `title.max_chars` | Max title length accepted by the rule splitter |
 | `title.max_words` | Max words accepted by the rule splitter |
 | `title.llm.base_url` | OpenAI-compatible base URL |
@@ -165,6 +169,9 @@ Multipart fields for both transcription endpoints:
 | `language` | no | Language name or code (`Chinese`, `en`, `yue`, …); empty means auto |
 
 Until the model finishes loading, both transcription endpoints return `503`.
+
+`vad.*` and `audio.max_chunk_seconds` only apply in chunking mode: transcription is
+whole-file by default and switches to chunking when `audio.max_chunk_seconds` is `> 0`.
 
 ### Synchronous call
 

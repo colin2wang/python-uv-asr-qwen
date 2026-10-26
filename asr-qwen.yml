@@ -9,7 +9,8 @@ model:
   max_inference_batch_size: 1
 
 lid:
-  enabled: true
+  # false：不加载 SenseVoice（当前主流程不调用它，装 funasr + 改 true 可启用）
+  enabled: false
   model_path: qwen-models/SenseVoiceSmall
   device: cpu
   segment_seconds: 10
@@ -23,12 +24,15 @@ vad:
 
 audio:
   sample_rate: 16000
-  max_chunk_seconds: 30
+  # 整段送入模型转写；> 0 时才按 VAD 静音点分块（分块会把跨块句子切断、丢失上下文）
+  max_chunk_seconds: 0
 
 sentence:
-  # 句段只按句末标点断句；max_chars / max_duration_seconds 为兜底上限，0 表示不限制
-  max_chars: 0
-  max_duration_seconds: 0.0
+  # 相邻 token 停顿达到该值即断句；唱歌拖腔会产生大量长停顿、切出碎片，默认 0 关闭
+  min_gap_seconds: 0.0
+  # 主要切分依据：对齐 token 流不含标点，长度/时长是可靠的句段边界
+  max_chars: 80
+  max_duration_seconds: 12.0
 
 title:
   max_chars: 80

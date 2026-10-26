@@ -20,6 +20,7 @@ Qwen3-ASR 语音转写定位服务（Python ≥3.12 + FastAPI），uv 管理依�
 - **音频解码依赖 torchcodec + FFmpeg**：`torchaudio.load/save` 的实际解码走 `torchcodec`（已入依赖），Windows 上还需本机安装 FFmpeg **shared** 版（FFmpeg 4–9 的 DLL，加入 PATH），否则上传 mp3/m4a 等格式在 `audio/io.py` 处报 ImportError。
 - **配置零默认值**：`asr-qwen.yml` 所有字段必填，`config/loader.py` 严格校验并抛 `ConfigError`；新增配置需同步改 `settings.py`（frozen dataclass）+ `loader.py` + YAML。
 - **配置定位**：显式参数 > `ASR_CONFIG_PATH` 环境变量 > 项目根 → 包目录 → cwd，取第一个存在者；YAML 中相对路径相对该 YAML 所在目录解析。
+- **启动噪音**：`asr_qwen/server.py` 默认设置 `TRANSFORMERS_VERBOSITY=error` —— qwen_asr 调用 `generate` 时传了 generation_config 不支持的 `temperature`，transformers 会逐次告警；排查时手动设 `TRANSFORMERS_VERBOSITY=info` 覆盖。SenseVoice LID 当前可选（`lid.enabled: false` 时不下载也不加载，`detect_language_by_sensevoice` 无调用点，主流程语种判定走模型输出 + 脚本投票 + 粤语规则）。
 - **禁止验证**：不要运行任何验证、编译或测试（包括 `uv sync`、`uv run`、导入检查、测试套件）；改动后仅做静态确认，不执行命令。
 - 仓库行尾统一 LF（`.gitattributes`）；`.gitignore` 忽略 `.venv/`、`__pycache__/`、`qwen-models/`、`.atomcode/`、`.idea/`，新增本地产物时同步登记。
 - 模型权重放 `qwen-models/`（不提交仓库），缺失时服务启动自动从 ModelScope 下载（`modelscope` 包需环境已预装）；未加载完成时 `/asr/localize` 返回 503，`/health` 可查状态。
@@ -27,7 +28,8 @@ Qwen3-ASR 语音转写定位服务（Python ≥3.12 + FastAPI），uv 管理依�
 - **进度按阶段加权**：`progress.py` 的阶段序列与权重为 decode 0.10 → vad 0.08 → transcribe 0.55 → language 0.12 → postprocess 0.15，整体百分比 = 已完成阶段权重 + 当前阶段权重 × 阶段内比例；进度值与阶段序号只增不减。脚本投票后的二次转写通过 `ProgressReporter.subrange(low, high, alias="language")` 映射进 `language` 阶段尾部，因此不会让进度倒退或阶段跳回 `transcribe`。
 - **转写输出结构**：`pipeline/localizer.py` 返回 `language`、`duration`、`title`、`body`、`text`、`segments`、`matched`、`stats`；`segments` 每项为 `index/text/start/end/duration`（序号从 1 起），`matched` 每项为 `rule/start/end/timestamp/segment_index/confidence`。改动输出结构需同步改 `localizer.py`、`text/keywords.py`、`text/sentences.py`、`api/testui.py` 与两份 README。
 - **拼接与定位都以 token 流为准**：对齐 token 是唯一事实来源，拉丁语言 token 为词级且不含空格，`text/sentences.py` 负责按脚本规则补空格（`_needs_space`），`text/keywords.py` 在 token 拼接串上做匹配并以二分定位 token 下标。不要改回「用 `result.text` 的字符下标索引 token」——全文含空格与规范化差异，英文下会整体错位。
-- **句段只在句末断**：`text/sentences.py` 的断句条件是句末标点/换行（`_ends_sentence`），以及时间戳倒流时强制断开；`sentence.max_chars` / `sentence.max_duration_seconds` 只是兜底上限，为 `0` 时不生效（`asr-qwen.yml` 当前即为 0）。不要改回按字数/时长硬切——那会把没有标点的英文歌词之类的内容切断。
+- **整段转写，不切块**：`pipeline/transcribe.py` 默认把整段音频一次送入模型；只有 `audio.max_chunk_seconds > 0`（当前为 0）才走 `audio/vad.py` 的 VAD 分块。分块会把跨块句子从中间切断，且每块独立转写会丢失上下文、丢掉句末标点，进而让句段合并分不出句子——不要默认打开分块。
+- **句段切分以长度/时长上限为主**（与参考实现 `sample-asr/sentence_segments.py` 一致）：对齐 token 流不含标点（标点只存在于 `result.text`），唱歌音频尤其如此，所以 `sentence.max_chars: 80` / `max_duration_seconds: 12.0` 是主要切分依据；句末标点（`_ends_sentence`）与时间戳倒流也会断句；`sentence.min_gap_seconds`（当前 0，关闭）可按 token 停顿断句，但唱歌拖腔会产生 1 秒级碎片，不要默认打开。每段输出 `index/start/end/duration`。输入侧保持整段转写不分块（`audio.max_chunk_seconds: 0`），分块才是"句子被切开"的根源。
 
 ## 维护规则
 

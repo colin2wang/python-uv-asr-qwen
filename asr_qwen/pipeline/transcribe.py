@@ -65,10 +65,16 @@ def transcribe_audio(
     language: str | None,
     progress: ProgressReporter | None = None,
 ) -> Transcript:
-    """短音频直接转写；长音频按静音点分块转写后拼接时间轴。"""
+    """整段一次转写；`audio.max_chunk_seconds > 0` 时才按静音点分块。
+
+    默认整段送入模型：分块会把跨块的句子从中间切断，且每块独立转写丢失上下文。
+    """
     duration = mono.shape[0] / sample_rate
-    if duration <= settings.audio.max_chunk_seconds:
+    if settings.audio.max_chunk_seconds <= 0 or duration <= settings.audio.max_chunk_seconds:
+        # 不分块时 vad 阶段不存在，直接标记其完成，避免进度条跳过一段
+        _advance(progress, "vad", 1.0)
         _advance(progress, "transcribe", 0.0)
+        logger.info("整段转写 %.1fs（未分块）", duration)
         result = _first_result(model, str(audio_path), language)
         _advance(progress, "transcribe", 1.0)
         return Transcript(result.language, result.text, _to_segments(_timestamps(result)), 1)

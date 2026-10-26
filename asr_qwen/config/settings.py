@@ -52,8 +52,9 @@ class AudioSettings:
 
 @dataclass(frozen=True, slots=True)
 class SentenceSettings:
-    """句段合并的长度上限。"""
+    """句段合并：断句停顿阈值与兜底上限（为 0 表示不生效）。"""
 
+    min_gap_seconds: float
     max_chars: int
     max_duration_seconds: float
 

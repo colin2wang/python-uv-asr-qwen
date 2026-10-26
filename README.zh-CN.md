@@ -8,10 +8,12 @@
 ## 特性
 
 - **多语种转写**：Qwen3-ASR-1.7B（约 30 种语言），GPU 推理。
-- **完整句段**：逐 token 时间戳合并为句段时**只在自然句末断句**（句末标点或换行），
-  不再按字数/时长硬切，句子不会被切断；`sentence.max_chars`、`sentence.max_duration_seconds`
-  只作兜底上限，**0 表示不限制**。非法时间戳按前后边界插值修复；拉丁语言的 token 是词级
-  且不带空格，合并时按脚本规则补回空格（英文词间、中英之间补，CJK 内部与标点旁不补）。
+- **句段切分**：逐 token 时间戳合并为句段，按 `sentence.max_chars` /
+  `sentence.max_duration_seconds` 上限切分 —— 对齐 token 流**不含标点**（标点只存在于
+  全文），长度/时长是可靠边界；句末标点处同样断句；`sentence.min_gap_seconds`
+  可按 token 停顿断句（默认 `0` 关闭——唱歌拖腔会产生 1 秒级碎片）。每段带 `start`/`end`
+  秒级时间戳。非法时间戳按前后边界插值修复；拉丁语言的 token 是词级且不带空格，合并时
+  按脚本规则补回空格（英文词间、中英之间补，CJK 内部与标点旁不补）。
 - **自动语种判定**：优先采用模型输出；唱歌音频走「脚本投票」兜底
   （西里尔 / 汉字 / 假名 / 谚文，同一脚本命中 ≥2 次才采信）；中文文本中检出粤语专用字时
   升级为 `Cantonese`。
@@ -20,8 +22,9 @@
 - **标题 / 正文拆分**：规则优先（`标题：` 标记、首行、首句或前 `title.max_words` 个词），
   仅当规则结果不像标题时才调用 OpenAI 兼容 LLM；标题始终是转写原文的**精确前缀**，
   不翻译、不改写。
-- **长音频支持**：能量 VAD（向量化逐帧能量）找静音边界，按 `audio.max_chunk_seconds`
-  分块转写，再把各块时间轴拼接回整段；单个语音段超过上限时按上限切片。
+- **整段转写（默认不分块）**：整段音频一次送入模型 —— 分块会把跨块的句子从中间切断，
+  且每块独立转写会丢失上下文，导致句末标点缺失、语句被切开。把 `audio.max_chunk_seconds`
+  设为 > 0 可恢复「能量 VAD 找静音边界 → 分块 → 拼接时间轴」的行为。
 - **同步 + 异步接口**：`POST /asr/localize` 同步返回；`POST /asr/jobs` 立即返回任务 ID，
   可轮询阶段、整体百分比、分块进度与耗时。
 - **内置测试页面**：`/ui`，无前端构建、无新增依赖；展示整体进度条与阶段名，结果区可点击
@@ -33,10 +36,9 @@
 
 ```
 上传 ──> audio/io.py       解码并重采样为单声道 16 kHz（torchaudio/torchcodec，必要时回退 ffmpeg CLI）
-     ──> pipeline/transcribe  短音频：一次转写
-                              长音频：VAD 语音段 → 按上限分块 → 逐块转写
+     ──> pipeline/transcribe  整段一次转写（audio.max_chunk_seconds > 0 时才 VAD 分块）
      ──> language/detector    语种归一化、脚本投票兜底、粤语判定
-     ──> text/sentences       按句末标点合并为带时间戳的句段
+     ──> text/sentences       合并为带时间戳的句段（长度/时长上限，标点与停顿可选）
      ──> text/keywords        逗号分隔查询词 → 命中时间区间
      ──> text/title           规则拆分，必要时 LLM 修正（标题必须是原文前缀）
 ```
@@ -109,14 +111,15 @@ uv run uvicorn asr_qwen.server:app --port 8010   # server.workers > 1 时服务�
 | `lid.model_path` | SenseVoiceSmall 目录 |
 | `lid.device` | 语种识别设备，如 `cpu` |
 | `lid.segment_seconds` | 语种采样 / 脚本投票使用的音频窗口时长 |
-| `vad.frame_ms` / `hop_ms` | 能量分析的帧长与帧移 |
+| `vad.frame_ms` / `hop_ms` | 能量分析的帧长与帧移（仅分块时使用） |
 | `vad.threshold_db` | 语音判定阈值（dBFS） |
 | `vad.min_silence_ms` | 短于该值的间隔视为语音 |
 | `vad.min_speech_ms` | 短于该值的语音段被丢弃 |
 | `audio.sample_rate` | 目标单声道采样率（建议 16000） |
-| `audio.max_chunk_seconds` | 超过该时长的音频先做 VAD 分块 |
-| `sentence.max_chars` | 句段字符数兜底上限，`0` 表示不限制（默认按句末标点断句） |
-| `sentence.max_duration_seconds` | 句段时长兜底上限（秒），`0` 表示不限制 |
+| `audio.max_chunk_seconds` | `0` = 整段送模型（默认）；`> 0` = 超过该时长才按 VAD 静音点分块 |
+| `sentence.min_gap_seconds` | 相邻 token 停顿达到该值即断句；`0` 关闭（唱歌拖腔会产生碎片） |
+| `sentence.max_chars` | 句段字符数上限，`0` 表示不限制 |
+| `sentence.max_duration_seconds` | 句段时长上限（秒），`0` 表示不限制 |
 | `title.max_chars` | 规则拆分可接受的标题长度上限 |
 | `title.max_words` | 规则拆分可接受的标题词数上限 |
 | `title.llm.base_url` | OpenAI 兼容接口地址 |
@@ -148,6 +151,9 @@ uv run uvicorn asr_qwen.server:app --port 8010   # server.workers > 1 时服务�
 | `language` | 否 | 语种名或代码（`Chinese`、`en`、`yue` …），留空自动判定 |
 
 模型未加载完成时，两个转写接口均返回 `503`。
+
+`vad.*` 与 `audio.max_chunk_seconds` 仅在分块模式下生效：默认整段转写，把
+`audio.max_chunk_seconds` 设为 > 0 即切回分块模式。
 
 ### 同步调用
 
