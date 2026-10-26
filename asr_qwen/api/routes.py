@@ -82,6 +82,7 @@ def _run_job(
         with temporary_upload(filename, payload) as audio_path:
             reporter.stage("decode")
             mono, sample_rate = load_mono_audio(audio_path, settings.audio.sample_rate)
+            reporter.advance("decode", 1.0)
             result = localize(
                 context.registry,
                 settings,
@@ -96,6 +97,12 @@ def _run_job(
     except Exception as exc:
         logger.exception("job %s transcription failed", job_id)
         finish(job_id, error=str(exc))
+    else:
+        logger.info(
+            "job %s done in %.2fs",
+            job_id,
+            result["stats"]["elapsed_seconds"],
+        )
 
 
 @router.post("/asr/jobs")
@@ -118,7 +125,7 @@ async def create_localize_job(
         daemon=True,
         name=f"asr-job-{job_id}",
     ).start()
-    return {"job_id": job_id}
+    return get_job(job_id) or {"job_id": job_id, "status": "queued"}
 
 
 @router.get("/asr/jobs/{job_id}")

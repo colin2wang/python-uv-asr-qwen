@@ -17,11 +17,12 @@
 - **标题 / 正文拆分**：规则优先（`标题：` 标记、首行、首句或前 `title.max_words` 个词），
   仅当规则结果不像标题时才调用 OpenAI 兼容 LLM；标题始终是转写原文的**精确前缀**，
   不翻译、不改写。
-- **长音频支持**：能量 VAD 找静音边界，按 `audio.max_chunk_seconds` 分块转写，
-  再把各块时间轴拼接回整段。
+- **长音频支持**：能量 VAD（向量化逐帧能量）找静音边界，按 `audio.max_chunk_seconds`
+  分块转写，再把各块时间轴拼接回整段；单个语音段超过上限时按上限切片。
 - **同步 + 异步接口**：`POST /asr/localize` 同步返回；`POST /asr/jobs` 立即返回任务 ID，
-  可轮询阶段与分块进度。
-- **内置测试页面**：`/ui`，无前端构建、无新增依赖。
+  可轮询阶段、整体百分比、分块进度与耗时。
+- **内置测试页面**：`/ui`，无前端构建、无新增依赖；展示整体进度条与阶段名，结果区可点击
+  句段跳转播放，并导出 TXT / SRT / VTT / JSON。
 - **配置零默认值**：`asr-qwen.yml` 字段全必填，缺失或类型错误直接抛 `ConfigError`；
   模型权重缺失时启动自动从 ModelScope 下载。
 
@@ -131,7 +132,7 @@ uv run uvicorn asr_qwen.server:app --port 8010   # server.workers > 1 时服务�
 | `GET` | `/health` | 返回 `status`、`loaded`、`lid`、`model`、`device` |
 | `POST` | `/asr/localize` | 同步转写（multipart） |
 | `POST` | `/asr/jobs` | 创建后台任务，返回 `{"job_id": "..."}` |
-| `GET` | `/asr/jobs/{job_id}` | 查询状态、阶段、分块进度与结果 |
+| `GET` | `/asr/jobs/{job_id}` | 查询状态、阶段、整体百分比、分块进度与结果 |
 | `GET` | `/ui` | 内置测试页面 |
 | `GET` | `/docs` | OpenAPI 文档 |
 
@@ -164,34 +165,75 @@ curl.exe -s http://127.0.0.1:8010/asr/jobs/8f1c02a9d3e4
 ```
 
 任务状态：`status` ∈ `queued` / `running` / `done` / `error`，
-`stage` ∈ `queued` / `decode` / `transcribe` / `postprocess`，
-`done`/`total` 为分块进度计数。完成时带 `result`（结构同下），失败时带 `error`。
-进度表为内存结构，超过一小时的任务会在下次创建任务时清理。
+`stage` ∈ `queued` / `decode` / `vad` / `transcribe` / `language` / `postprocess`
+（附带 `stage_label` 中文名），`percent` 为整体百分比、`done`/`total` 为分块计数
+（未分块时均为 0），`elapsed_seconds` 为任务已运行时长。
+
+```json
+{
+  "job_id": "8f1c02a9d3e4",
+  "status": "running",
+  "stage": "transcribe",
+  "stage_label": "转写中",
+  "progress": 0.4128,
+  "percent": 41,
+  "done": 3,
+  "total": 10,
+  "elapsed_seconds": 26.4,
+  "result": null,
+  "error": null
+}
+```
+
+整体百分比按阶段加权计算（decode 10% → vad 8% → transcribe 55% → language 12% →
+postprocess 15%），且只增不减：唱歌音频触发脚本投票后的二次转写，其进度被映射进
+`language` 阶段尾部，因此进度条不会倒退。完成时带 `result`（结构同下），失败时带
+`error`。进度表为内存结构，超过一小时的任务会在下次创建任务时清理。
 
 ### 返回结构
 
 ```json
 {
   "language": "Chinese",
+  "duration": 4.86,
+  "title": "今天的主题是价格。",
+  "body": "下面看三个例子。",
   "text": "今天的主题是价格。下面看三个例子。",
   "segments": [
-    {"text": "今天的主题是价格。", "start": 0.12, "end": 2.4},
-    {"text": "下面看三个例子。", "start": 2.4, "end": 4.86}
+    {
+      "index": 1, "text": "今天的主题是价格。",
+      "start": 0.12, "end": 2.4, "duration": 2.28
+    },
+    {
+      "index": 2, "text": "下面看三个例子。",
+      "start": 2.4, "end": 4.86, "duration": 2.46
+    }
   ],
   "matched": [
-    {"timestamp": [0.12, 2.4], "rule": "价格", "confidence": 1.0}
+    {
+      "rule": "价格", "start": 0.12, "end": 1.4,
+      "timestamp": [0.12, 1.4], "segment_index": 1, "confidence": 1.0
+    }
   ],
-  "title": "今天的主题是价格。",
-  "body": "下面看三个例子。"
+  "stats": {
+    "sample_rate": 16000,
+    "chunk_count": 1,
+    "segment_count": 2,
+    "char_count": 20,
+    "elapsed_seconds": 3.42
+  }
 }
 ```
 
 - `language` — 模型判定的语种，经脚本投票 / 粤语规则修正后的结果。
+- `duration` — 音频时长（秒）。
 - `text` — 全文转写。
-- `segments` — 由对齐 token 合并出的句段，`start`/`end` 单位为秒。
-- `matched` — 每个关键词命中项：`timestamp` 命中区间、`rule` 对应查询词、
-  `confidence` 恒为 1.0（子串精确匹配）。
+- `segments` — 由对齐 token 合并出的句段：`index` 从 1 起的序号，`start`/`end`/
+  `duration` 单位为秒。
+- `matched` — 每个关键词命中项：`rule` 对应查询词，`start`/`end`（等同 `timestamp`）
+  为命中区间，`segment_index` 为所属句段序号，`confidence` 恒为 1.0（子串精确匹配）。
 - `title` / `body` — `title` 是 `text` 的精确前缀，两者拼接可还原全文。
+- `stats` — 处理元信息：采样率、分块数、句段数、字数与流水线耗时。
 
 ## 目录结构
 

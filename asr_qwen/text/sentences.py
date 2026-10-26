@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 
 _SENTENCE_END_CHARS = set("。！？!?；;.")
@@ -144,3 +145,21 @@ def merge_to_sentences(
 
     _flush(sentences, parts, sentence_start, sentence_end)
     return sentences
+
+
+def number_segments(sentences: Iterable[dict[str, object]]) -> list[dict[str, Any]]:
+    """给句段编号（从 1 开始）并补出时长，输出对外统一的句段结构。"""
+    numbered: list[dict[str, Any]] = []
+    for index, sentence in enumerate(sentences, start=1):
+        start = round(float(sentence["start"]), 3)
+        end = round(float(sentence["end"]), 3)
+        numbered.append(
+            {
+                "index": index,
+                "text": str(sentence["text"]),
+                "start": start,
+                "end": end,
+                "duration": round(end - start, 3),
+            }
+        )
+    return numbered

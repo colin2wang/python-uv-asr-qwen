@@ -24,12 +24,36 @@ def find_keywords(
                 break
             last = index + len(keyword) - 1
             if index < total and last < total:
+                begin = round(float(segments[index]["start"]), 3)
+                end = round(float(segments[last]["end"]), 3)
                 matched.append(
                     {
-                        "timestamp": [segments[index]["start"], segments[last]["end"]],
                         "rule": keyword,
+                        "start": begin,
+                        "end": end,
+                        "timestamp": [begin, end],
                         "confidence": 1.0,
                     }
                 )
             start = index + 1
     return matched
+
+
+def with_sentence_index(
+    matched: list[dict[str, Any]],
+    sentences: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """给命中项标注所在句段序号（1 起），便于直接跳到对应句段。"""
+    located: list[dict[str, Any]] = []
+    for item in matched:
+        hit = dict(item)
+        hit["segment_index"] = _segment_index(sentences, float(hit["start"]))
+        located.append(hit)
+    return located
+
+
+def _segment_index(sentences: list[dict[str, Any]], position: float) -> int | None:
+    for sentence in sentences:
+        if float(sentence["start"]) <= position <= float(sentence["end"]):
+            return int(sentence["index"])
+    return None

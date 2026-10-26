@@ -22,11 +22,15 @@ and a title/body split.
   `title.max_words` words); an OpenAI-compatible LLM is consulted only when the rule
   result is not obviously a title. The title is always an exact prefix of the
   transcript — never rewritten or translated.
-- **Long audio support**: energy-based VAD finds silence boundaries and chunks audio
-  to `audio.max_chunk_seconds`, then stitches chunk timelines back together.
+- **Long audio support**: vectorized energy VAD finds silence boundaries and chunks
+  audio to `audio.max_chunk_seconds`, then stitches chunk timelines back together; a
+  single speech run longer than the limit is sliced at the limit.
 - **Sync and async APIs**: `POST /asr/localize` blocks until done;
-  `POST /asr/jobs` returns a job id with stage/chunk progress you can poll.
-- **Built-in test page** at `/ui`, no frontend build step, no extra dependencies.
+  `POST /asr/jobs` returns a job id whose stage, overall percentage, chunk counters
+  and elapsed time you can poll.
+- **Built-in test page** at `/ui`, no frontend build step, no extra dependencies:
+  weighted progress bar per stage, clickable sentence rows that seek the player,
+  and TXT / SRT / VTT / JSON export.
 - **Strict configuration**: `asr-qwen.yml` has no defaults in code; a missing or
   mistyped field fails fast with `ConfigError`. Missing model weights are downloaded
   from ModelScope at startup.
@@ -142,7 +146,7 @@ Relative paths inside the file resolve against the file's own directory.
 | `GET` | `/health` | `status`, `loaded`, `lid`, `model`, `device` |
 | `POST` | `/asr/localize` | Synchronous transcription (multipart) |
 | `POST` | `/asr/jobs` | Create a background job, returns `{"job_id": "..."}` |
-| `GET` | `/asr/jobs/{job_id}` | Job status, stage, chunk progress, result |
+| `GET` | `/asr/jobs/{job_id}` | Job status, stage, overall percentage, chunk progress, result |
 | `GET` | `/ui` | Built-in test page |
 | `GET` | `/docs` | OpenAPI UI |
 
@@ -175,34 +179,74 @@ curl.exe -s http://127.0.0.1:8010/asr/jobs/8f1c02a9d3e4
 ```
 
 Job states: `status` ∈ `queued` / `running` / `done` / `error`, `stage` ∈
-`queued` / `decode` / `transcribe` / `postprocess`, `done`/`total` are the chunk
-counters. Finished jobs carry `result` (same shape as below) or `error`. The registry
-is in-memory and entries older than one hour are evicted on the next job creation.
+`queued` / `decode` / `vad` / `transcribe` / `language` / `postprocess` (with a
+`stage_label` alongside), `percent` is the overall percentage while `done`/`total` are
+the chunk counters (both `0` when the audio was not chunked), `elapsed_seconds` is the
+job runtime.
+
+```json
+{
+  "job_id": "8f1c02a9d3e4",
+  "status": "running",
+  "stage": "transcribe",
+  "stage_label": "转写中",
+  "progress": 0.4128,
+  "percent": 41,
+  "done": 3,
+  "total": 10,
+  "elapsed_seconds": 26.4,
+  "result": null,
+  "error": null
+}
+```
+
+The percentage is stage-weighted (decode 10% → vad 8% → transcribe 55% → language 12%
+→ postprocess 15%) and never decreases: the re-transcription a sung clip can trigger
+after script voting is mapped into the tail of the `language` stage, so the bar never
+walks backwards. Finished jobs carry `result` (same shape as below) or `error`. The
+registry is in-memory and entries older than one hour are evicted on the next job
+creation.
 
 ### Response
 
 ```json
 {
   "language": "Chinese",
+  "duration": 4.86,
+  "title": "今天的主题是价格。",
+  "body": "下面看三个例子。",
   "text": "今天的主题是价格。下面看三个例子。",
   "segments": [
-    {"text": "今天的主题是价格。", "start": 0.12, "end": 2.4},
-    {"text": "下面看三个例子。", "start": 2.4, "end": 4.86}
+    {"index": 1, "text": "今天的主题是价格。", "start": 0.12, "end": 2.4, "duration": 2.28},
+    {"index": 2, "text": "下面看三个例子。", "start": 2.4, "end": 4.86, "duration": 2.46}
   ],
   "matched": [
-    {"timestamp": [0.12, 2.4], "rule": "价格", "confidence": 1.0}
+    {
+      "rule": "价格", "start": 0.12, "end": 1.4,
+      "timestamp": [0.12, 1.4], "segment_index": 1, "confidence": 1.0
+    }
   ],
-  "title": "今天的主题是价格。",
-  "body": "下面看三个例子。"
+  "stats": {
+    "sample_rate": 16000,
+    "chunk_count": 1,
+    "segment_count": 2,
+    "char_count": 20,
+    "elapsed_seconds": 3.42
+  }
 }
 ```
 
 - `language` — as detected by the model, adjusted by the script-voting and Cantonese heuristics.
+- `duration` — audio length in seconds.
 - `text` — full transcript.
-- `segments` — sentence-level `[start, end]` seconds, merged from aligner tokens.
-- `matched` — `{timestamp, rule, confidence}` per keyword hit; `rule` echoes the keyword.
+- `segments` — sentence segments merged from aligner tokens: `index` (1-based),
+  `start` / `end` / `duration` in seconds.
+- `matched` — per keyword hit: `rule`, `start` / `end` (same as `timestamp`), the
+  `segment_index` it falls in, and `confidence` (always 1.0 for exact substring hits).
 - `title` / `body` — `title` is an exact prefix of `text`; `title + body` reconstructs
   the transcript.
+- `stats` — processing metadata: sample rate, chunk count, segment count, characters
+  and pipeline elapsed time.
 
 ## Project layout
 

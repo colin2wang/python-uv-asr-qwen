@@ -23,7 +23,9 @@ Qwen3-ASR 语音转写定位服务（Python ≥3.12 + FastAPI），uv 管理依�
 - **禁止验证**：不要运行任何验证、编译或测试（包括 `uv sync`、`uv run`、导入检查、测试套件）；改动后仅做静态确认，不执行命令。
 - 仓库行尾统一 LF（`.gitattributes`）；`.gitignore` 忽略 `.venv/`、`__pycache__/`、`qwen-models/`、`.atomcode/`、`.idea/`，新增本地产物时同步登记。
 - 模型权重放 `qwen-models/`（不提交仓库），缺失时服务启动自动从 ModelScope 下载（`modelscope` 包需环境已预装）；未加载完成时 `/asr/localize` 返回 503，`/health` 可查状态。
-- 测试页面：`GET /ui`（`asr_qwen/api/testui.py`，内嵌 HTML，无新依赖），随服务一起启动。转写入口两个：`POST /asr/localize` 同步接口；`POST /asr/jobs` 创建后台任务（daemon 线程执行），`GET /asr/jobs/{job_id}` 查询阶段/分块进度与结果，进度登记在 `asr_qwen/pipeline/progress.py`（内存表，任务 ID 键）。测试页走异步接口并显示进度条。
+- 测试页面：`GET /ui`（`asr_qwen/api/testui.py`，内嵌 HTML，无新依赖），随服务一起启动。转写入口两个：`POST /asr/localize` 同步接口；`POST /asr/jobs` 创建后台任务（daemon 线程执行），`GET /asr/jobs/{job_id}` 查询阶段/整体百分比/分块进度与结果，进度登记在 `asr_qwen/pipeline/progress.py`（内存表，任务 ID 键）。测试页走异步接口，展示整体进度条、阶段名、分块计数与实时耗时，结果区含句段表格（点击跳转播放）、关键词命中与 TXT/SRT/VTT/JSON 导出。
+- **进度按阶段加权**：`progress.py` 的阶段序列与权重为 decode 0.10 → vad 0.08 → transcribe 0.55 → language 0.12 → postprocess 0.15，整体百分比 = 已完成阶段权重 + 当前阶段权重 × 阶段内比例；进度值与阶段序号只增不减。脚本投票后的二次转写通过 `ProgressReporter.subrange(low, high, alias="language")` 映射进 `language` 阶段尾部，因此不会让进度倒退或阶段跳回 `transcribe`。
+- **转写输出结构**：`pipeline/localizer.py` 返回 `language`、`duration`、`title`、`body`、`text`、`segments`、`matched`、`stats`；`segments` 每项为 `index/text/start/end/duration`（序号从 1 起），`matched` 每项为 `rule/start/end/timestamp/segment_index/confidence`。改动输出结构需同步改 `localizer.py`、`text/keywords.py`、`text/sentences.py`、`api/testui.py` 与两份 README。
 
 ## 维护规则
 
