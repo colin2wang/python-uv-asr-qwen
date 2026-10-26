@@ -8,6 +8,32 @@ from typing import Any
 
 _SENTENCE_END_CHARS = set("。！？!?；;.")
 
+# 紧跟其前不需要空格的符号（开引号、开括号、货币符号等）
+_NO_SPACE_AFTER = set("（【《“‘([{<$_")
+# 这些标点后若是数字，视为小数点或千分位，不补空格
+_DECIMAL_POINTS = set(".,")
+
+
+def _needs_space(left: str, right: str) -> bool:
+    """相邻两个 token 之间是否补空格。
+
+    拉丁语言的 aligner token 是词级且不含空格，拼接时按此规则补回：
+    - 词与词之间补（英文词间、中英混排）；
+    - CJK 内部不补；
+    - 标点紧跟前一个 token，其后按语言再决定是否补空格。
+    """
+    if not left or not right or left.isspace() or right.isspace():
+        return False
+    if not right.isalnum():
+        return False
+    if left in _NO_SPACE_AFTER:
+        return False
+    if left in _DECIMAL_POINTS and right.isdigit():
+        return False
+    if left.isalnum():
+        return left.isascii() or right.isascii()
+    return left.isascii() and right.isascii()
+
 
 def _is_valid_timestamp(value: object) -> bool:
     return isinstance(value, (int, float)) and value >= 0
@@ -66,13 +92,23 @@ def _repair_invalid_timestamps(char_segments: list[dict[str, object]]) -> list[d
     return records
 
 
+def _join(parts: list[tuple[str, bool]]) -> str:
+    """按 parts 记录的空格标记拼接 token。"""
+    text = ""
+    for piece, spaced in parts:
+        if spaced and text:
+            text += " "
+        text += piece
+    return text
+
+
 def _flush(
     sentences: list[dict[str, object]],
-    parts: list[str],
+    parts: list[tuple[str, bool]],
     start: float | None,
     end: float | None,
 ) -> None:
-    text = "".join(parts).strip()
+    text = _join(parts).strip()
     if text and start is not None and end is not None:
         sentences.append({"text": text, "start": round(float(start), 3), "end": round(float(end), 3)})
     parts.clear()
@@ -93,7 +129,8 @@ def merge_to_sentences(
     """
     char_segments = _repair_invalid_timestamps(list(char_segments))
     sentences: list[dict[str, object]] = []
-    parts: list[str] = []
+    # 每个元素为 (片段, 是否与前一片段之间补空格)
+    parts: list[tuple[str, bool]] = []
     sentence_start: float | None = None
     sentence_end: float | None = None
 
@@ -111,7 +148,7 @@ def merge_to_sentences(
         if end < start:
             start, end = end, start
 
-        current_chars = sum(len(part) for part in parts)
+        current_chars = sum(len(piece) for piece, _ in parts)
         current_duration = end - sentence_start if sentence_start is not None else 0.0
         should_break = bool(parts) and (
             current_chars >= max_chars
@@ -128,17 +165,22 @@ def merge_to_sentences(
         sentence_end = max(end, sentence_end) if sentence_end is not None else end
 
         remaining = token
+        is_head = True
         while remaining:
-            available = max_chars - sum(len(part) for part in parts)
+            available = max_chars - sum(len(piece) for piece, _ in parts)
             if available <= 0:
                 _flush(sentences, parts, sentence_start, sentence_end)
                 sentence_start = start
                 sentence_end = end
                 available = max_chars
-            parts.append(remaining[:available])
+            piece = remaining[:available]
+            tail = parts[-1][0][-1:] if parts else ""
+            # 超长 token 被切开时，后续片段不再补空格
+            parts.append((piece, is_head and _needs_space(tail, piece[:1])))
             remaining = remaining[available:]
+            is_head = False
 
-        if parts and parts[-1][-1:] in _SENTENCE_END_CHARS:
+        if parts and parts[-1][0][-1:] in _SENTENCE_END_CHARS:
             _flush(sentences, parts, sentence_start, sentence_end)
             sentence_start = None
             sentence_end = None

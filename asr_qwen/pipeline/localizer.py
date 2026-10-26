@@ -81,7 +81,7 @@ def localize(
     )
     if progress:
         progress.advance("postprocess", 0.5)
-    matched = with_sentence_index(find_keywords(transcript.text, transcript.segments, question or ""), segments)
+    matched = with_sentence_index(find_keywords(transcript.segments, question or ""), segments)
     if progress:
         progress.advance("postprocess", 1.0)
 

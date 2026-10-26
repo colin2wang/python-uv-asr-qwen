@@ -12,12 +12,15 @@ and a title/body split.
 - **Multi-language transcription** with Qwen3-ASR-1.7B (roughly 30 languages) on GPU.
 - **Timestamps that survive post-processing**: forced-aligner tokens are merged into
   sentence segments (`sentence.max_chars`, `sentence.max_duration_seconds`) without
-  losing the timeline; invalid tokens are repaired by interpolation.
+  losing the timeline; invalid tokens are repaired by interpolation. Latin tokens are
+  word-level and carry no spaces, so merging re-inserts them by script rule (between
+  English words and at CJK/Latin boundaries, never inside CJK or around punctuation).
 - **Automatic language detection**: the model's own language output, plus a
   script-voting second pass for sung audio (Cyrillic / Han / Kana / Hangul), plus a
   Cantonese-character heuristic that promotes `Chinese` to `Cantonese`.
-- **Keyword localization**: a comma-separated query such as `price,refund` is mapped
-  to hit time ranges.
+- **Keyword localization**: a comma-separated query such as `price,refund` is matched
+  on the concatenated token stream and mapped to hit time ranges (spaces inside the
+  query are ignored, so `killing me` matches English lyrics).
 - **Title / body split**: rule-first (label, first line, first sentence, or first
   `title.max_words` words); an OpenAI-compatible LLM is consulted only when the rule
   result is not obviously a title. The title is always an exact prefix of the
