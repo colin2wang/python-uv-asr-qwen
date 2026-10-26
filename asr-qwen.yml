@@ -26,8 +26,9 @@ audio:
   max_chunk_seconds: 30
 
 sentence:
-  max_chars: 80
-  max_duration_seconds: 12.0
+  # 句段只按句末标点断句；max_chars / max_duration_seconds 为兜底上限，0 表示不限制
+  max_chars: 0
+  max_duration_seconds: 0.0
 
 title:
   max_chars: 80

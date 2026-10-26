@@ -35,6 +35,11 @@ def _needs_space(left: str, right: str) -> bool:
     return left.isascii() and right.isascii()
 
 
+def _ends_sentence(piece: str) -> bool:
+    """片段是否落在句末：句末标点或换行。"""
+    return piece[-1:] in _SENTENCE_END_CHARS or piece.endswith("\n")
+
+
 def _is_valid_timestamp(value: object) -> bool:
     return isinstance(value, (int, float)) and value >= 0
 
@@ -120,12 +125,16 @@ def merge_to_sentences(
     max_chars: int,
     max_duration_seconds: float,
 ) -> list[dict[str, object]]:
-    """Group timestamped ASR tokens without losing the timeline.
+    """Group timestamped ASR tokens into whole sentences, keeping the timeline.
 
     The aligner tokens are the source of truth. The model's whole-text field can
     contain normalization differences and punctuation absent from the token
     stream; attempting to walk both pointers simultaneously can desynchronize
     them and produce null timestamps after one mismatch.
+
+    断句只发生在自然句末（句末标点或换行），避免把没有标点的句子（如英文歌词）
+    按长度切断；时间戳倒流时才强制断开。max_chars / max_duration_seconds 是兜底
+    上限，两者为 0 表示不限制。
     """
     char_segments = _repair_invalid_timestamps(list(char_segments))
     sentences: list[dict[str, object]] = []
@@ -151,8 +160,8 @@ def merge_to_sentences(
         current_chars = sum(len(piece) for piece, _ in parts)
         current_duration = end - sentence_start if sentence_start is not None else 0.0
         should_break = bool(parts) and (
-            current_chars >= max_chars
-            or current_duration >= max_duration_seconds
+            (max_chars > 0 and current_chars >= max_chars)
+            or (max_duration_seconds > 0 and current_duration >= max_duration_seconds)
             or start < (sentence_end if sentence_end is not None else start)
         )
         if should_break:
@@ -167,7 +176,8 @@ def merge_to_sentences(
         remaining = token
         is_head = True
         while remaining:
-            available = max_chars - sum(len(piece) for piece, _ in parts)
+            # 未设上限时不切分 token，粘成一个整体
+            available = len(remaining) if max_chars <= 0 else max_chars - sum(len(piece) for piece, _ in parts)
             if available <= 0:
                 _flush(sentences, parts, sentence_start, sentence_end)
                 sentence_start = start
@@ -180,7 +190,7 @@ def merge_to_sentences(
             remaining = remaining[available:]
             is_head = False
 
-        if parts and parts[-1][0][-1:] in _SENTENCE_END_CHARS:
+        if parts and _ends_sentence(parts[-1][0]):
             _flush(sentences, parts, sentence_start, sentence_end)
             sentence_start = None
             sentence_end = None

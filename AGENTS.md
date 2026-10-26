@@ -27,6 +27,7 @@ Qwen3-ASR 语音转写定位服务（Python ≥3.12 + FastAPI），uv 管理依�
 - **进度按阶段加权**：`progress.py` 的阶段序列与权重为 decode 0.10 → vad 0.08 → transcribe 0.55 → language 0.12 → postprocess 0.15，整体百分比 = 已完成阶段权重 + 当前阶段权重 × 阶段内比例；进度值与阶段序号只增不减。脚本投票后的二次转写通过 `ProgressReporter.subrange(low, high, alias="language")` 映射进 `language` 阶段尾部，因此不会让进度倒退或阶段跳回 `transcribe`。
 - **转写输出结构**：`pipeline/localizer.py` 返回 `language`、`duration`、`title`、`body`、`text`、`segments`、`matched`、`stats`；`segments` 每项为 `index/text/start/end/duration`（序号从 1 起），`matched` 每项为 `rule/start/end/timestamp/segment_index/confidence`。改动输出结构需同步改 `localizer.py`、`text/keywords.py`、`text/sentences.py`、`api/testui.py` 与两份 README。
 - **拼接与定位都以 token 流为准**：对齐 token 是唯一事实来源，拉丁语言 token 为词级且不含空格，`text/sentences.py` 负责按脚本规则补空格（`_needs_space`），`text/keywords.py` 在 token 拼接串上做匹配并以二分定位 token 下标。不要改回「用 `result.text` 的字符下标索引 token」——全文含空格与规范化差异，英文下会整体错位。
+- **句段只在句末断**：`text/sentences.py` 的断句条件是句末标点/换行（`_ends_sentence`），以及时间戳倒流时强制断开；`sentence.max_chars` / `sentence.max_duration_seconds` 只是兜底上限，为 `0` 时不生效（`asr-qwen.yml` 当前即为 0）。不要改回按字数/时长硬切——那会把没有标点的英文歌词之类的内容切断。
 
 ## 维护规则
 

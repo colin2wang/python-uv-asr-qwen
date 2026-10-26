@@ -10,11 +10,14 @@ and a title/body split.
 ## Features
 
 - **Multi-language transcription** with Qwen3-ASR-1.7B (roughly 30 languages) on GPU.
-- **Timestamps that survive post-processing**: forced-aligner tokens are merged into
-  sentence segments (`sentence.max_chars`, `sentence.max_duration_seconds`) without
-  losing the timeline; invalid tokens are repaired by interpolation. Latin tokens are
-  word-level and carry no spaces, so merging re-inserts them by script rule (between
-  English words and at CJK/Latin boundaries, never inside CJK or around punctuation).
+- **Whole sentences, timestamps intact**: forced-aligner tokens are merged into
+  segments that break **only at natural sentence ends** (sentence-ending punctuation
+  or a newline), never by length — a lyric without punctuation stays one segment
+  instead of being chopped up. `sentence.max_chars` / `sentence.max_duration_seconds`
+  are fallbacks only, and `0` means unlimited. Invalid tokens are repaired by
+  interpolation. Latin tokens are word-level and carry no spaces, so merging
+  re-inserts them by script rule (between English words and at CJK/Latin boundaries,
+  never inside CJK or around punctuation).
 - **Automatic language detection**: the model's own language output, plus a
   script-voting second pass for sung audio (Cyrillic / Han / Kana / Hangul), plus a
   Cantonese-character heuristic that promotes `Chinese` to `Cantonese`.
@@ -45,7 +48,7 @@ upload ──> audio/io.py       decode + resample to mono 16 kHz (torchaudio/to
       ──> pipeline/transcribe  short file: one pass
                                long file: VAD speech segments → chunks ≤ max_chunk_seconds → per-chunk pass
       ──> language/detector    normalize requested language, script-vote fallback, Cantonese check
-      ──> text/sentences      merged, timestamped sentence segments
+      ──> text/sentences      merged at sentence ends, timestamped
       ──> text/keywords       comma-separated terms → time ranges
       ──> text/title          rule split, optional LLM refinement (exact-prefix title)
 ```
@@ -129,8 +132,8 @@ Relative paths inside the file resolve against the file's own directory.
 | `vad.min_speech_ms` | Speech runs shorter than this are dropped |
 | `audio.sample_rate` | Target mono sample rate (16 kHz recommended) |
 | `audio.max_chunk_seconds` | Longer audio is VAD-chunked before transcription |
-| `sentence.max_chars` | Max characters per sentence segment |
-| `sentence.max_duration_seconds` | Max duration per sentence segment |
+| `sentence.max_chars` | Fallback character cap per segment; `0` disables it (segments break on punctuation) |
+| `sentence.max_duration_seconds` | Fallback duration cap per segment in seconds; `0` disables it |
 | `title.max_chars` | Max title length accepted by the rule splitter |
 | `title.max_words` | Max words accepted by the rule splitter |
 | `title.llm.base_url` | OpenAI-compatible base URL |

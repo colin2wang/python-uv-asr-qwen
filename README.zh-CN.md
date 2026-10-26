@@ -8,10 +8,10 @@
 ## 特性
 
 - **多语种转写**：Qwen3-ASR-1.7B（约 30 种语言），GPU 推理。
-- **时间戳不丢失**：对齐模型输出的逐 token 时间戳合并为句段
-  （`sentence.max_chars`、`sentence.max_duration_seconds`），非法时间戳按前后边界插值修复；
-  拉丁语言的 token 是词级且不带空格，合并时按脚本规则补回空格（英文词间、中英之间补，
-  CJK 内部与标点旁不补）。
+- **完整句段**：逐 token 时间戳合并为句段时**只在自然句末断句**（句末标点或换行），
+  不再按字数/时长硬切，句子不会被切断；`sentence.max_chars`、`sentence.max_duration_seconds`
+  只作兜底上限，**0 表示不限制**。非法时间戳按前后边界插值修复；拉丁语言的 token 是词级
+  且不带空格，合并时按脚本规则补回空格（英文词间、中英之间补，CJK 内部与标点旁不补）。
 - **自动语种判定**：优先采用模型输出；唱歌音频走「脚本投票」兜底
   （西里尔 / 汉字 / 假名 / 谚文，同一脚本命中 ≥2 次才采信）；中文文本中检出粤语专用字时
   升级为 `Cantonese`。
@@ -36,7 +36,7 @@
      ──> pipeline/transcribe  短音频：一次转写
                               长音频：VAD 语音段 → 按上限分块 → 逐块转写
      ──> language/detector    语种归一化、脚本投票兜底、粤语判定
-     ──> text/sentences       合并为带时间戳的句段
+     ──> text/sentences       按句末标点合并为带时间戳的句段
      ──> text/keywords        逗号分隔查询词 → 命中时间区间
      ──> text/title           规则拆分，必要时 LLM 修正（标题必须是原文前缀）
 ```
@@ -115,8 +115,8 @@ uv run uvicorn asr_qwen.server:app --port 8010   # server.workers > 1 时服务�
 | `vad.min_speech_ms` | 短于该值的语音段被丢弃 |
 | `audio.sample_rate` | 目标单声道采样率（建议 16000） |
 | `audio.max_chunk_seconds` | 超过该时长的音频先做 VAD 分块 |
-| `sentence.max_chars` | 每个句段的字符上限 |
-| `sentence.max_duration_seconds` | 每个句段的时长上限（秒） |
+| `sentence.max_chars` | 句段字符数兜底上限，`0` 表示不限制（默认按句末标点断句） |
+| `sentence.max_duration_seconds` | 句段时长兜底上限（秒），`0` 表示不限制 |
 | `title.max_chars` | 规则拆分可接受的标题长度上限 |
 | `title.max_words` | 规则拆分可接受的标题词数上限 |
 | `title.llm.base_url` | OpenAI 兼容接口地址 |
