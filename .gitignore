@@ -1,0 +1,18 @@
+# Python 虚拟环境（uv sync 生成）
+.venv/
+
+# Python 字节码缓存
+/__pycache__/
+asr_qwen/**/__pycache__/
+
+# 模型权重（download_models.py 从 ModelScope 下载，体积大，见 AGENTS.md）
+qwen-models/
+
+# AI 编码器本地状态（AtomCode）
+.atomcode/
+
+# IDE（JetBrains/PyCharm）
+.idea/
+
+# 生成的提交信息草稿
+COMMIT.md

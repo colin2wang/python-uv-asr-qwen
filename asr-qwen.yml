@@ -1,0 +1,47 @@
+# Qwen3-ASR 服务配置
+# 所有路径均为相对路径，相对于本文件所在目录解析。
+
+model:
+  asr_path: qwen-models/Qwen3-ASR-1.7B
+  aligner_path: qwen-models/Qwen3-ForcedAligner-0.6B
+  dtype: float16
+  device: cuda:0
+  max_inference_batch_size: 1
+
+lid:
+  enabled: true
+  model_path: qwen-models/SenseVoiceSmall
+  device: cpu
+  segment_seconds: 10
+
+vad:
+  frame_ms: 30
+  hop_ms: 10
+  threshold_db: -45.0
+  min_silence_ms: 400
+  min_speech_ms: 200
+
+audio:
+  sample_rate: 16000
+  max_chunk_seconds: 30
+
+sentence:
+  max_chars: 80
+  max_duration_seconds: 12.0
+
+title:
+  max_chars: 80
+  max_words: 18
+  llm:
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
+    api_key: ""
+    timeout_seconds: 15.0
+
+server:
+  title: Qwen3-ASR Multi-Lang + Timestamp Server
+  version: 1.6.1
+  host: 127.0.0.1
+  port: 8010
+  log_level: info
+  workers: 1

@@ -1,0 +1,50 @@
+[project]
+name = "python-uv-asr-qwen"
+version = "1.6.1"
+description = "Qwen3-ASR 多语种转写服务：句段时间戳、关键词定位与标题拆分"
+requires-python = ">=3.12"
+dependencies = [
+    # HTTP 服务
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "python-multipart>=0.0.9",
+    # 配置文件（asr-qwen.yml）解析
+    "pyyaml>=6.0",
+    # 推理后端；torch/torchaudio 固定走 pytorch-cu128 索引（见下方 tool.uv.sources）
+    "qwen-asr>=0.0.6",
+    "torch>=2.4",
+    "torchaudio>=2.4",
+    # torchaudio.load/save 的实际解码后端（torchaudio>=2.11 必须）；Windows 上另需 FFmpeg shared 版
+    "torchcodec>=0.10",
+    "modelscope>=1.40.2",
+]
+
+[project.optional-dependencies]
+# SenseVoice 语种识别（asr-qwen.yml 中 lid.enabled = true 时需要）
+lid = [
+    "funasr>=1.2",
+]
+
+[project.scripts]
+asr-qwen = "asr_qwen.server:main"
+
+[tool.uv.sources]
+# PyPI 默认不给 Windows 提供 CUDA 版 torch 轮子，必须显式指定官方 CUDA 索引
+torch = [{ index = "pytorch-cu128" }]
+torchaudio = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://mirrors.nju.edu.cn/pytorch/whl/cu128/"
+explicit = true
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["asr_qwen"]
