@@ -1,4 +1,4 @@
-"""Qwen3-ASR 与 SenseVoice 模型的加载和生命周期管理。"""
+"""Loading and lifecycle management for the Qwen3-ASR and SenseVoice models."""
 
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_dtype(name: str) -> Any:
-    """把配置中的 dtype 名称（如 float16）解析为 torch.dtype。"""
+"""Resolve a configured dtype name (e.g. float16) to a torch.dtype."""
     import torch
 
     dtype = getattr(torch, name, None)
     if not isinstance(dtype, torch.dtype):
-        raise ValueError(f"不支持的 model.dtype: {name}")
+        raise ValueError(f"unsupported model.dtype: {name}")
     return dtype
 
 
 class ModelRegistry:
-    """按配置加载并持有推理模型，模型未加载完成时属性为 None。"""
+    """Load and own the inference models; attributes stay None until loading finishes."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -41,7 +41,7 @@ class ModelRegistry:
         return self._asr is not None
 
     def load(self) -> None:
-        """加载主模型与可选的语种识别模型；本地缺失的模型先从 ModelScope 下载。"""
+        """Load the main model and the optional LID model, downloading them if missing."""
         from .download import ensure_models
 
         ensure_models(self._settings)
@@ -74,8 +74,9 @@ class ModelRegistry:
         except ImportError as exc:
             self._lid = None
             logger.warning(
-                "SenseVoice LID 依赖缺失（%s）：执行 uv sync --extra lid 安装，"
-                "或把 asr-qwen.yml 的 lid.enabled 设为 false；转写不依赖该模型",
+                "SenseVoice LID dependency missing (%s): install it with "
+                "`uv sync --extra lid`, or set lid.enabled to false in asr-qwen.yml; "
+                "transcription does not depend on this model",
                 exc,
             )
             return

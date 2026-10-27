@@ -1,4 +1,4 @@
-"""HTTP 层：应用装配与接口定义。"""
+"""HTTP layer: application assembly and endpoint definitions."""
 
 from .app import create_app
 

@@ -1,4 +1,4 @@
-"""标题拆分：规则优先，必要时借助 LLM，标题必须是原文的起始前缀。"""
+"""Title splitting: rules first, LLM when needed; a title must be a prefix of the text."""
 
 from __future__ import annotations
 
@@ -8,9 +8,10 @@ import urllib.request
 
 from ..config.settings import TitleSettings
 
-# 规则拆分出的标题足够短且正文非空时，无需调用 LLM
+# A short rule-based title with a non-empty body needs no LLM call
 OBVIOUS_TITLE_MAX_CHARS = 30
 
+# Matches Chinese title labels in the transcript; the literals are input, not copy
 _TITLE_LABEL_PATTERN = re.compile(r"^\s*(?:标题|题目|title)\s*[:：]\s*", re.I)
 _SENTENCE_PATTERN = "^(.{{1,{max_chars}}}?[。．！？!?；;：:])"
 _CJK_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
@@ -26,7 +27,7 @@ _SYSTEM_PROMPT = (
 
 
 class TitleSplitter:
-    """把 ASR 转写文本拆分为标题与正文。"""
+    """Split an ASR transcript into a title and a body."""
 
     def __init__(self, settings: TitleSettings) -> None:
         self._settings = settings

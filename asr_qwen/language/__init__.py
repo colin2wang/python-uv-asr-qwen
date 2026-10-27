@@ -1,4 +1,4 @@
-"""语种识别层：语言代码表与检测策略。"""
+"""Language layer: code tables and detection strategies."""
 
 from .codes import (
     CANTONESE_CHARS,

@@ -1,4 +1,4 @@
-"""配置层：读取 asr-qwen.yml 并暴露强类型配置对象。"""
+"""Configuration layer: read asr-qwen.yml and expose strongly typed settings."""
 
 from .loader import load_settings, resolve_config_path
 from .settings import (

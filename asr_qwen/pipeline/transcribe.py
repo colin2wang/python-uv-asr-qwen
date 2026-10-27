@@ -1,4 +1,4 @@
-"""按音频长度选择直接转写或 VAD 分块转写。"""
+"""Transcribe whole audio, or VAD-chunked when a chunk limit is configured."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Transcript:
-    """一次转写的结果。"""
+    """The result of one transcription pass."""
 
     language: str | None
     text: str
@@ -46,7 +46,7 @@ def _timestamps(result: Any) -> list[dict[str, Any]]:
 
 
 def _advance(progress: ProgressReporter | None, stage: str, ratio: float) -> None:
-    """上报阶段内完成比例（无分块概念时使用）。"""
+    """Report the in-stage completion ratio (used where chunks do not apply)."""
     if progress is not None:
         progress.advance(stage, ratio)
 
@@ -65,16 +65,17 @@ def transcribe_audio(
     language: str | None,
     progress: ProgressReporter | None = None,
 ) -> Transcript:
-    """整段一次转写；`audio.max_chunk_seconds > 0` 时才按静音点分块。
+    """Transcribe in one pass; chunk at silence only when `audio.max_chunk_seconds > 0`.
 
-    默认整段送入模型：分块会把跨块的句子从中间切断，且每块独立转写丢失上下文。
+    Whole-file by default: chunking cuts sentences that straddle a boundary, and each
+    chunk is transcribed without the surrounding context.
     """
     duration = mono.shape[0] / sample_rate
     if settings.audio.max_chunk_seconds <= 0 or duration <= settings.audio.max_chunk_seconds:
-        # 不分块时 vad 阶段不存在，直接标记其完成，避免进度条跳过一段
+        # Without chunking there is no vad stage; mark it done so the bar does not jump
         _advance(progress, "vad", 1.0)
         _advance(progress, "transcribe", 0.0)
-        logger.info("整段转写 %.1fs（未分块）", duration)
+        logger.info("transcribing %.1fs in a single pass (no chunking)", duration)
         result = _first_result(model, str(audio_path), language)
         _advance(progress, "transcribe", 1.0)
         return Transcript(result.language, result.text, _to_segments(_timestamps(result)), 1)
@@ -83,11 +84,11 @@ def transcribe_audio(
     speech_segments = detect_speech_segments(mono, sample_rate, settings.vad)
     chunks = chunk_by_silence(speech_segments, settings.audio.max_chunk_seconds * sample_rate)
     if not chunks:
-        logger.info("未检测到语音段（时长 %.1fs），跳过转写", duration)
+        logger.info("no speech detected in %.1fs, skipping transcription", duration)
         _advance(progress, "transcribe", 1.0)
         return Transcript(language, "", [], 0)
 
-    logger.info("音频 %.1fs 分为 %d 块转写", duration, len(chunks))
+    logger.info("splitting %.1fs of audio into %d chunks", duration, len(chunks))
     texts: list[str] = []
     all_segments: list[dict[str, Any]] = []
     chunk_languages: dict[str, int] = {}
@@ -100,7 +101,7 @@ def transcribe_audio(
         if result.language:
             chunk_languages[result.language] = chunk_languages.get(result.language, 0) + 1
         logger.info(
-            "转写分块 %d/%d（%.1fs~%.1fs）",
+            "transcribing chunk %d/%d (%.1fs~%.1fs)",
             index + 1,
             len(chunks),
             chunk_start / sample_rate,

@@ -1,4 +1,4 @@
-"""FastAPI 应用装配：注册路由并在启动时加载模型。"""
+"""FastAPI assembly: register routers and load the model at startup."""
 
 from __future__ import annotations
 
@@ -22,12 +22,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     server = context.settings.server
     host = "127.0.0.1" if server.host in ("0.0.0.0", "::") else server.host
     print(f"API      http://{host}:{server.port}/docs")
-    print(f"测试页面 http://{host}:{server.port}/ui")
+    print(f"Test UI  http://{host}:{server.port}/ui")
     yield
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    """构建应用；未传入配置时从 asr-qwen.yml 读取。"""
+    """Build the application; settings come from asr-qwen.yml when omitted."""
     settings = settings or load_settings()
     app = FastAPI(
         title=settings.server.title,

@@ -1,3 +1,3 @@
-"""Qwen3-ASR 多语种 + 时间戳转写服务。"""
+"""Qwen3-ASR multi-language transcription service with timestamps."""
 
 __version__ = "1.6.1"

@@ -1,4 +1,4 @@
-"""内置测试页面：上传媒体文件调用转写定位接口。"""
+"""Built-in test page: upload a media file and call the localization endpoint."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from .routes import _context
 router = APIRouter()
 
 _PAGE = """<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Qwen3-ASR 测试页面</title>
+<title>Qwen3-ASR Test Page</title>
 <style>
   :root {
     --bg: #f5f7fa; --card: #fff; --line: #e4e7ec; --text: #1f2328;
@@ -121,37 +121,37 @@ _PAGE = """<!DOCTYPE html>
 <div class="wrap">
 
 <header>
-  <h1>Qwen3-ASR 转写定位</h1>
-  <span class="badge" id="health">加载中…</span>
+  <h1>Qwen3-ASR Transcription</h1>
+  <span class="badge" id="health">Loading…</span>
 </header>
 
 <section class="card">
   <form id="form">
     <input type="file" id="file" accept="audio/*,video/*" hidden>
     <div class="drop" id="drop">
-      <strong>点击选择文件</strong>，或把音视频拖到这里
-      <div class="muted" id="fileinfo">wav / mp3 / flac / ogg / m4a 等可解码格式</div>
+      <strong>Click to choose a file</strong>, or drop audio/video here
+      <div class="muted" id="fileinfo">wav / mp3 / flac / ogg / m4a and other decodable formats</div>
     </div>
     <audio id="player" controls hidden></audio>
     <div class="grid">
       <div>
-        <label for="question">定位关键词（可选，逗号分隔）</label>
-        <input type="text" id="question" placeholder="例如：价格,退款">
+        <label for="question">Keywords to locate (optional, comma separated)</label>
+        <input type="text" id="question" placeholder="e.g. price,refund">
       </div>
       <div>
-        <label for="language">指定语种（可选，留空自动检测）</label>
-        <input type="text" id="language" placeholder="例如：Chinese / English / yue">
+        <label for="language">Language (optional, blank for auto-detect)</label>
+        <input type="text" id="language" placeholder="e.g. Chinese / English / yue">
       </div>
     </div>
     <div class="actions">
-      <button type="submit" class="primary" id="submit">上传并转写</button>
-      <button type="button" id="cancel" hidden>停止等待</button>
+      <button type="submit" class="primary" id="submit">Upload and transcribe</button>
+      <button type="button" id="cancel" hidden>Stop waiting</button>
     </div>
   </form>
 
   <div class="progress-card" id="progressCard" hidden>
     <div class="progress-head">
-      <span id="stageText">准备中…</span>
+      <span id="stageText">Preparing…</span>
       <span id="percentText">0%</span>
     </div>
     <div class="track"><div class="bar" id="bar"></div></div>
@@ -163,37 +163,37 @@ _PAGE = """<!DOCTYPE html>
 </section>
 
 <section class="card" id="errorCard" hidden>
-  <h2>转写失败</h2>
+  <h2>Transcription failed</h2>
   <p class="err-text" id="errorText"></p>
 </section>
 
 <section class="card" id="result" hidden>
-  <h2>结果</h2>
+  <h2>Result</h2>
   <div class="chips" id="overview"></div>
 
-  <h3>标题 / 正文</h3>
+  <h3>Title / body</h3>
   <p class="title-text" id="title"></p>
   <p class="body-text" id="body"></p>
 
-  <h3>句段（点击行跳转到该时间点）</h3>
+  <h3>Segments (click a row to seek)</h3>
   <table>
-    <thead><tr><th>#</th><th>起止</th><th>时长</th><th>文本</th></tr></thead>
+    <thead><tr><th>#</th><th>Range</th><th>Length</th><th>Text</th></tr></thead>
     <tbody id="segmentRows"></tbody>
   </table>
 
-  <h3>关键词命中</h3>
+  <h3>Keyword hits</h3>
   <div id="matched"></div>
 
-  <h3>导出</h3>
+  <h3>Export</h3>
   <div class="toolbar">
-    <button type="button" id="copyText">复制全文</button>
+    <button type="button" id="copyText">Copy text</button>
     <button type="button" id="saveTxt">TXT</button>
     <button type="button" id="saveSrt">SRT</button>
     <button type="button" id="saveVtt">VTT</button>
     <button type="button" id="saveJson">JSON</button>
   </div>
 
-  <details><summary>原始 JSON</summary><pre id="raw"></pre></details>
+  <details><summary>Raw JSON</summary><pre id="raw"></pre></details>
 </section>
 
 </div>
@@ -207,11 +207,11 @@ async function refreshHealth() {
     const res = await fetch('/health');
     const data = await res.json();
     const badge = $('health');
-    badge.textContent = (data.loaded ? '模型已加载' : '模型未加载（503）')
+    badge.textContent = (data.loaded ? 'Model loaded' : 'Model not loaded (503)')
       + ' · ' + data.device + ' · lid=' + (data.lid ? 'on' : 'off');
     badge.className = 'badge ' + (data.loaded ? 'ok' : 'err');
   } catch (e) {
-    $('health').textContent = '服务不可达';
+    $('health').textContent = 'Service unreachable';
     $('health').className = 'badge err';
   }
 }
@@ -286,7 +286,7 @@ function resetProgress() {
   $('progressCard').hidden = false;
   $('bar').style.width = '0';
   $('percentText').textContent = '0%';
-  $('stageText').textContent = '上传中…';
+  $('stageText').textContent = 'Uploading…';
   $('chunks').textContent = '';
   $('elapsed').textContent = '0.0s';
 }
@@ -295,12 +295,12 @@ function showProgress(job) {
   const percent = job.status === 'done' ? 100 : (job.percent || 0);
   $('bar').style.width = percent + '%';
   $('percentText').textContent = percent + '%';
-  const label = job.status === 'done' ? '已完成' : (job.stage_label || '处理中');
+  const label = job.status === 'done' ? 'Done' : (job.stage_label || 'Working');
   $('stageText').textContent = label;
   if (job.total > 1 && job.status !== 'done') {
-    $('chunks').textContent = '分块 ' + job.done + '/' + job.total;
+    $('chunks').textContent = 'chunk ' + job.done + '/' + job.total;
   } else if (job.status === 'done') {
-    $('chunks').textContent = '耗时 ' + humanSeconds(job.elapsed_seconds);
+    $('chunks').textContent = 'took ' + humanSeconds(job.elapsed_seconds);
   } else {
     $('chunks').textContent = '';
   }
@@ -322,12 +322,12 @@ function renderOverview(data) {
   const overview = $('overview');
   overview.textContent = '';
   const stats = data.stats || {};
-  addChip(overview, '语种', data.language || '未知');
-  addChip(overview, '时长', humanSeconds(data.duration));
-  addChip(overview, '句段', stats.segment_count != null ? stats.segment_count : (data.segments || []).length);
-  addChip(overview, '字数', stats.char_count != null ? stats.char_count : (data.text || '').length);
-  addChip(overview, '处理耗时', humanSeconds(stats.elapsed_seconds));
-  if (stats.chunk_count != null) addChip(overview, '分块', stats.chunk_count);
+  addChip(overview, 'Language', data.language || 'unknown');
+  addChip(overview, 'Duration', humanSeconds(data.duration));
+  addChip(overview, 'Segments', stats.segment_count != null ? stats.segment_count : (data.segments || []).length);
+  addChip(overview, 'Chars', stats.char_count != null ? stats.char_count : (data.text || '').length);
+  addChip(overview, 'Processing', humanSeconds(stats.elapsed_seconds));
+  if (stats.chunk_count != null) addChip(overview, 'Chunks', stats.chunk_count);
 }
 
 function seek(seconds) {
@@ -363,7 +363,7 @@ function renderSegments(segments) {
     const td = document.createElement('td');
     td.colSpan = 4;
     td.className = 'empty';
-    td.textContent = '没有可展示的句段（音频可能无人声）';
+    td.textContent = 'No segments to show (the audio may contain no speech)';
     tr.appendChild(td);
     rows.appendChild(tr);
   }
@@ -375,7 +375,7 @@ function renderMatched(matched) {
   if (!matched || !matched.length) {
     const span = document.createElement('span');
     span.className = 'muted';
-    span.textContent = '未填入关键词或无命中';
+    span.textContent = 'No keyword given, or no hits';
     holder.appendChild(span);
     return;
   }
@@ -383,7 +383,7 @@ function renderMatched(matched) {
     const item = document.createElement('span');
     item.className = 'hit';
     item.textContent = hit.rule + ' · ' + shortTime(hit.start)
-      + (hit.segment_index ? ' · 第' + hit.segment_index + '句' : '');
+      + (hit.segment_index ? ' · seg ' + hit.segment_index : '');
     item.addEventListener('click', () => seek(hit.start));
     holder.appendChild(item);
   });
@@ -398,7 +398,7 @@ function renderResult(data) {
   const body = $('body');
   body.textContent = data.body || data.text || '';
   if (!data.body && !data.text) {
-    body.textContent = '（无转写内容）';
+    body.textContent = '(no transcript)';
     body.className = 'body-text empty';
   } else {
     body.className = 'body-text';
@@ -455,11 +455,11 @@ function bindExport() {
     const content = toTxt(state.result || {});
     try {
       await navigator.clipboard.writeText(content);
-      $('copyText').textContent = '已复制';
+      $('copyText').textContent = 'Copied';
     } catch (e) {
-      $('copyText').textContent = '复制失败';
+      $('copyText').textContent = 'Copy failed';
     }
-    setTimeout(() => { $('copyText').textContent = '复制全文'; }, 1500);
+    setTimeout(() => { $('copyText').textContent = 'Copy text'; }, 1500);
   });
   $('saveTxt').addEventListener('click', () => {
     saveFile(state.baseName + '.txt', toTxt(state.result || {}), 'text/plain');
@@ -487,7 +487,7 @@ async function pollJob(jobId) {
       $('elapsed').textContent = humanSeconds(job.elapsed_seconds);
       return job.result;
     }
-    if (job.status === 'error') throw new Error(job.error || '任务失败');
+    if (job.status === 'error') throw new Error(job.error || 'Job failed');
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }
@@ -529,7 +529,7 @@ $('form').addEventListener('submit', async (ev) => {
 $('cancel').addEventListener('click', () => {
   state.cancelled = true;
   $('cancel').hidden = true;
-  $('stageText').textContent = '已停止等待（服务端继续处理）';
+  $('stageText').textContent = 'Stopped waiting (the server keeps processing)';
 });
 
 bindExport();
@@ -542,6 +542,6 @@ refreshHealth();
 
 @router.get("/ui", response_class=HTMLResponse, include_in_schema=False)
 def test_ui(request: Request) -> HTMLResponse:
-    """内置测试页面；仅本地调试用，不走鉴权。"""
-    _context(request)  # 确认应用上下文已装配
+    """Built-in test page; local debugging only, no authentication."""
+    _context(request)  # make sure the application context is mounted
     return HTMLResponse(_PAGE)

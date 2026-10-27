@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
+import difflib
+import re
 from collections.abc import Iterable
 from typing import Any
 
 
 _SENTENCE_END_CHARS = set("。！？!?；;.")
+# Punctuation that consumes no token: it exists only in the full text, not in tokens
+_PUNCT_CHARS = set("。！？!?；;：:，,、（）()「」『』【】《》〈〉…—–-·・.\"'")
+# Units for splitting Latin full text into words: whitespace / word / punctuation run
+_LATIN_UNIT_PATTERN = re.compile(r"\s+|[\w']+|[^\s\w]+", re.UNICODE)
 
-# 紧跟其前不需要空格的符号（开引号、开括号、货币符号等）
+# Symbols that must not be followed by a space (opening quotes, brackets, currency…)
 _NO_SPACE_AFTER = set("（【《“‘([{<$_")
-# 这些标点后若是数字，视为小数点或千分位，不补空格
+# Punctuation followed by a digit reads as a decimal or thousands separator: no space
 _DECIMAL_POINTS = set(".,")
 
 
 def _needs_space(left: str, right: str) -> bool:
-    """相邻两个 token 之间是否补空格。
+    """Whether a space belongs between two adjacent tokens.
 
-    拉丁语言的 aligner token 是词级且不含空格，拼接时按此规则补回：
-    - 词与词之间补（英文词间、中英混排）；
-    - CJK 内部不补；
-    - 标点紧跟前一个 token，其后按语言再决定是否补空格。
+    Latin aligner tokens are word-level and carry no spaces, so merging re-inserts them:
+    - between words (English, or CJK/Latin mixtures);
+    - never inside CJK;
+    - punctuation stays attached to the previous token, spacing after it depends on script.
     """
     if not left or not right or left.isspace() or right.isspace():
         return False
@@ -36,7 +42,7 @@ def _needs_space(left: str, right: str) -> bool:
 
 
 def _ends_sentence(piece: str) -> bool:
-    """片段是否落在句末标点上。"""
+    """Whether a piece ends on sentence-final punctuation."""
     return piece[-1:] in _SENTENCE_END_CHARS
 
 
@@ -98,7 +104,7 @@ def _repair_invalid_timestamps(char_segments: list[dict[str, object]]) -> list[d
 
 
 def _join(parts: list[tuple[str, bool]]) -> str:
-    """按 parts 记录的空格标记拼接 token。"""
+    """Join token pieces, inserting a space where the parts recorded one."""
     text = ""
     for piece, spaced in parts:
         if spaced and text:
@@ -125,21 +131,108 @@ def merge_to_sentences(
     max_chars: int,
     max_duration_seconds: float,
     min_gap_seconds: float,
+    text: str = "",
 ) -> list[dict[str, object]]:
     """Group timestamped ASR tokens into sentences, keeping the timeline.
 
-    The aligner tokens are the source of truth. The model's whole-text field can
-    contain normalization differences and punctuation absent from the token
-    stream; attempting to walk both pointers simultaneously can desynchronize
-    them and produce null timestamps after one mismatch.
+    When the model's full text is passed it becomes the skeleton (as the reference
+    implementation does): punctuation and whitespace are copied into the segment but
+    consume no token, so the output keeps the original punctuation; timestamps come from
+    the token boundaries found by alignment. Without text it falls back to concatenating
+    tokens, re-inserting spaces for Latin scripts by rule.
 
-    断句条件：字符数达 max_chars、时长达 max_duration_seconds、句末标点
-    （_ends_sentence）、时间戳倒流；min_gap_seconds > 0 时相邻 token 的停顿也断句。
-    max_chars / max_duration_seconds / min_gap_seconds 为 0 时该项不生效。
+    Segments break on sentence-final punctuation, once the buffer reaches max_chars, once
+    the span reaches max_duration_seconds, or when timestamps move backwards; with
+    min_gap_seconds > 0 a pause between tokens breaks as well. A zero value disables the
+    corresponding rule.
     """
     tokens = _ordered_tokens(char_segments)
+    if text:
+        return _merge_from_text(
+            text,
+            tokens,
+            max_chars=max_chars,
+            max_duration_seconds=max_duration_seconds,
+            min_gap_seconds=min_gap_seconds,
+        )
+    return _merge_from_tokens(
+        tokens,
+        max_chars=max_chars,
+        max_duration_seconds=max_duration_seconds,
+        min_gap_seconds=min_gap_seconds,
+    )
+
+
+def _merge_from_text(
+    text: str,
+    tokens: list[tuple[str, float, float]],
+    *,
+    max_chars: int,
+    max_duration_seconds: float,
+    min_gap_seconds: float,
+) -> list[dict[str, object]]:
+    """Merge on the full text as skeleton: punctuation and spaces survive, timestamps
+    come from the aligned tokens."""
+    units = _split_units(text, _is_char_level(tokens))
+    anchors = _align_timestamps(units, tokens)
     sentences: list[dict[str, object]] = []
-    # 每个元素为 (片段, 是否与前一片段之间补空格)
+    buffer: list[str] = []
+    size = 0
+    start: float | None = None
+    end: float | None = None
+    last_end = 0.0
+
+    def flush() -> None:
+        nonlocal buffer, size, start, end, last_end
+        piece = "".join(buffer).strip()
+        if piece and start is not None and end is not None:
+            sentences.append({"text": piece, "start": round(start, 3), "end": round(end, 3)})
+            last_end = end
+        buffer = []
+        size = 0
+        start = None
+        end = None
+
+    for unit, anchor in zip(units, anchors):
+        if anchor is None or _is_punctuation(unit):
+            # Punctuation, whitespace and unaligned characters only feed the text
+            buffer.append(unit)
+            size += len(unit)
+            if _ends_sentence(unit):
+                if start is None:
+                    start = end = last_end
+                flush()
+            continue
+
+        if buffer and (
+            (max_duration_seconds > 0 and start is not None and anchor[1] - start >= max_duration_seconds)
+            or (min_gap_seconds > 0 and end is not None and anchor[0] - end >= min_gap_seconds)
+            or (end is not None and anchor[0] < end)
+        ):
+            flush()
+        if max_chars > 0 and size >= max_chars:
+            flush()
+        if start is None:
+            start = anchor[0]
+        end = anchor[1] if end is None else max(end, anchor[1])
+        buffer.append(unit)
+        size += len(unit)
+
+    if start is None and buffer:
+        start = end = last_end
+    flush()
+    return sentences
+
+
+def _merge_from_tokens(
+    tokens: list[tuple[str, float, float]],
+    *,
+    max_chars: int,
+    max_duration_seconds: float,
+    min_gap_seconds: float,
+) -> list[dict[str, object]]:
+    sentences: list[dict[str, object]] = []
+    # Each element is (piece, whether a space belongs before the previous element)
     parts: list[tuple[str, bool]] = []
     sentence_start: float | None = None
     sentence_end: float | None = None
@@ -164,7 +257,7 @@ def merge_to_sentences(
         remaining = token
         is_head = True
         while remaining:
-            # 未设上限时不切分 token，粘成一个整体
+            # Without a cap the token is never split; it stays one piece
             available = len(remaining) if max_chars <= 0 else max_chars - sum(len(piece) for piece, _ in parts)
             if available <= 0:
                 _flush(sentences, parts, sentence_start, sentence_end)
@@ -173,12 +266,12 @@ def merge_to_sentences(
                 available = max_chars
             piece = remaining[:available]
             tail = parts[-1][0][-1:] if parts else ""
-            # 超长 token 被切开时，后续片段不再补空格
+            # Pieces split out of one long token must not introduce a space
             parts.append((piece, is_head and _needs_space(tail, piece[:1])))
             remaining = remaining[available:]
             is_head = False
 
-        # 句边界：句末标点/换行，或与后续 token 之间的停顿达到阈值
+        # Sentence boundary: punctuation, or a pause before the next token
         gap = tokens[index + 1][1] - end if index + 1 < len(tokens) else 0.0
         if parts and (
             _ends_sentence(parts[-1][0]) or (min_gap_seconds > 0 and gap >= min_gap_seconds)
@@ -191,8 +284,55 @@ def merge_to_sentences(
     return sentences
 
 
+def _is_char_level(tokens: list[tuple[str, float, float]]) -> bool:
+    """Whether tokens are mostly single characters (CJK); Latin tokens are word-level."""
+    if not tokens:
+        return True
+    single = sum(1 for token, _, _ in tokens if len(token) == 1)
+    return single / len(tokens) > 0.8
+
+
+def _split_units(text: str, char_level: bool) -> list[str]:
+    """Split the full text into alignment units: per character, or per word/space/punct."""
+    return list(text) if char_level else _LATIN_UNIT_PATTERN.findall(text)
+
+
+def _is_punctuation(unit: str) -> bool:
+    """Whether a unit is whitespace or punctuation (consumes no token, skipped in aligning)."""
+    stripped = unit.strip()
+    return not stripped or all(char in _PUNCT_CHARS for char in stripped)
+
+
+def _align_timestamps(
+    units: list[str],
+    tokens: list[tuple[str, float, float]],
+) -> list[tuple[float, float] | None]:
+    """Align full-text units with tokens; each unit gets (start, end) or None.
+
+    The full text and the token stream can differ through normalization (ITN, casing,
+    punctuation), so matching the longest common runs is safer than walking two pointers
+    character by character: unmatched units simply get no timestamp instead of shifting
+    everything that follows.
+    """
+    anchors: list[tuple[float, float] | None] = [None] * len(units)
+    if not tokens:
+        return anchors
+    words = [(index, unit) for index, unit in enumerate(units) if not _is_punctuation(unit)]
+    matcher = difflib.SequenceMatcher(
+        a=[unit for _, unit in words],
+        b=[token for token, _, _ in tokens],
+        autojunk=False,
+    )
+    for a_start, b_start, size in matcher.get_matching_blocks():
+        for offset in range(size):
+            unit_index = words[a_start + offset][0]
+            _, start, end = tokens[b_start + offset]
+            anchors[unit_index] = (start, end)
+    return anchors
+
+
 def _ordered_tokens(char_segments: Iterable[dict[str, object]]) -> list[tuple[str, float, float]]:
-    """取出文本非空、时间戳合法的 token，按 (文本, 起始, 结束) 排列。"""
+    """Keep tokens that have text and valid timestamps, as (text, start, end)."""
     tokens: list[tuple[str, float, float]] = []
     for record in _repair_invalid_timestamps(list(char_segments)):
         token = str(record.get("text") or "")
@@ -207,7 +347,7 @@ def _ordered_tokens(char_segments: Iterable[dict[str, object]]) -> list[tuple[st
 
 
 def number_segments(sentences: Iterable[dict[str, object]]) -> list[dict[str, Any]]:
-    """给句段编号（从 1 开始）并补出时长，输出对外统一的句段结构。"""
+    """Number segments from 1 and add durations, producing the public segment shape."""
     numbered: list[dict[str, Any]] = []
     for index, sentence in enumerate(sentences, start=1):
         start = round(float(sentence["start"]), 3)

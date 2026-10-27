@@ -1,4 +1,4 @@
-"""语种归一化与多策略语种判定（SenseVoice 投票 / 文本脚本投票）。"""
+"""Language normalization and multi-strategy detection (SenseVoice / script voting)."""
 
 from __future__ import annotations
 
@@ -19,14 +19,16 @@ from .codes import (
 
 logger = logging.getLogger(__name__)
 
-# SenseVoice 多段投票：至少 2 段有语音，票数占比达到阈值才采信
+# SenseVoice votes over several slices: at least 2 slices must contain speech and one
+# language must reach the ratio threshold before the vote is trusted
 SENSEVOICE_SEGMENT_FRACTIONS = (0.0, 0.25, 0.5, 0.75, 1.0)
 SENSEVOICE_MIN_SPEECH_SEGMENTS = 2
 SENSEVOICE_VOTE_RATIO = 0.7
 
-# 脚本投票：同一脚本至少出现 2 次才判为该语言
+# Script voting: the same script must appear at least twice to decide the language
 SCRIPT_VOTE_MIN_HITS = 2
 
+# Scripts are detected by their Unicode ranges; the literals are input, not copy
 _SCRIPT_PATTERNS = {
     "Cyrillic": re.compile(r"[Ѐ-ӿ]"),
     "Han": re.compile(r"[一-鿿]"),
@@ -37,7 +39,7 @@ _SENSEVOICE_LABEL_PATTERN = re.compile(r"<\|(\w+)\|>")
 
 
 def normalize_language(value: str | None) -> str | None:
-    """把请求中的语言代码/名称归一化为 Qwen3-ASR 语言名，无法识别时保留原值。"""
+    """Normalize a requested language code/name to a Qwen3-ASR language name."""
     if not value:
         return None
     key = str(value).strip().lower().replace("_", "-").split("-")[0]
@@ -45,14 +47,14 @@ def normalize_language(value: str | None) -> str | None:
 
 
 def dominant_script(text: str) -> str | None:
-    """返回文本的主导非拉丁脚本（Cyrillic/Han/Kana/Hangul），无则返回 None。"""
+    """Return the dominant non-Latin script (Cyrillic/Han/Kana/Hangul), or None."""
     counts = {script: len(pattern.findall(text)) for script, pattern in _SCRIPT_PATTERNS.items()}
     best = max(counts, key=counts.get)
     return best if counts[best] > 0 else None
 
 
 def contains_cantonese(text: str) -> bool:
-    """文本中是否出现粤语专用字。"""
+    """Whether the text contains characters specific to Cantonese."""
     return any(char in CANTONESE_CHARS for char in text)
 
 
@@ -70,7 +72,7 @@ def detect_language_by_sensevoice(
     sample_rate: int,
     segment_seconds: int,
 ) -> str | None:
-    """SenseVoice 多段投票，跳过 nospeech，要求一致性，返回语言名；不一致返回 None。"""
+    """Vote over SenseVoice slices, skipping nospeech; returns a language or None."""
     if lid_model is None:
         return None
     segment_length = segment_seconds * sample_rate
@@ -113,10 +115,12 @@ def detect_language_by_script(
     sample_rate: int,
     segment_seconds: int,
 ) -> str | None:
-    """唱歌脚本投票：转写 4 个非拉丁候选，统计主导脚本，某脚本出现 ≥2 次判该语言。
+    """Script voting for sung audio: transcribe 4 non-Latin candidates and count scripts.
 
-    原理：唱歌时模型对多个强制语言都输出同一个母语脚本（如俄语歌强制俄/中/韩都出西里尔）；
-    口语时模型会翻译成各语言自己的脚本（各脚本只出现一次），故 ≥2 次才可信。
+    A language is decided when its script appears at least twice. Rationale: when
+    singing, every forced language yields the same native script (a Russian song forced
+    to Russian/Chinese/Korean still produces Cyrillic); in speech the model translates
+    into each language's own script, so each script appears once and is not trusted.
     """
     segment = _slice_segment(mono, sample_rate, segment_seconds)
     script_counts: dict[str, int] = {}

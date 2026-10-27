@@ -1,5 +1,5 @@
-# Qwen3-ASR 服务配置
-# 所有路径均为相对路径，相对于本文件所在目录解析。
+# Qwen3-ASR service configuration
+# All paths are relative and resolved against the directory of this file.
 
 model:
   asr_path: qwen-models/Qwen3-ASR-1.7B
@@ -9,7 +9,7 @@ model:
   max_inference_batch_size: 1
 
 lid:
-  # false：不加载 SenseVoice（当前主流程不调用它，装 funasr + 改 true 可启用）
+  # false: do not load SenseVoice (unused in the main flow; install funasr and set true to enable)
   enabled: false
   model_path: qwen-models/SenseVoiceSmall
   device: cpu
@@ -24,13 +24,16 @@ vad:
 
 audio:
   sample_rate: 16000
-  # 整段送入模型转写；> 0 时才按 VAD 静音点分块（分块会把跨块句子切断、丢失上下文）
+  # 0: send the whole file to the model; > 0: VAD-chunk audio longer than this
+  # (chunking cuts sentences that straddle a boundary and loses context)
   max_chunk_seconds: 0
 
 sentence:
-  # 相邻 token 停顿达到该值即断句；唱歌拖腔会产生大量长停顿、切出碎片，默认 0 关闭
+  # Break a segment when the pause between tokens reaches this; 0 disables it.
+  # Sung vocals produce many long pauses and would fragment into one-second pieces.
   min_gap_seconds: 0.0
-  # 主要切分依据：对齐 token 流不含标点，长度/时长是可靠的句段边界
+  # Main splitting rule: aligner tokens carry no punctuation, so length and duration
+  # are the reliable segment boundaries
   max_chars: 80
   max_duration_seconds: 12.0
 

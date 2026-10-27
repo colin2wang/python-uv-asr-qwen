@@ -1,4 +1,4 @@
-"""关键词定位：把查询词映射到对齐时间戳。"""
+"""Keyword localization: map query terms onto aligned timestamps."""
 
 from __future__ import annotations
 
@@ -10,11 +10,12 @@ def find_keywords(
     segments: list[dict[str, Any]],
     question: str,
 ) -> list[dict[str, Any]]:
-    """按逗号分隔的查询词在 token 序列上定位，返回命中时间区间。
+    """Locate comma-separated query terms on the token stream, returning time ranges.
 
-    匹配串是 token 文本的直接拼接：对齐 token（尤其拉丁语言）不含空格，
-    而转写全文有空格等规范化差异，用全文下标去索引 token 会整体错位。
-    查询词内部空白同样先去掉，因此 `killing me softly` 能命中英文歌词。
+    Matching runs on the plain concatenation of token texts: aligner tokens (especially
+    for Latin languages) contain no spaces while the full transcript does, so indexing
+    tokens with offsets from the full text would be off. Whitespace inside a query term
+    is ignored too, so `killing me softly` matches English lyrics.
     """
     matched: list[dict[str, Any]] = []
     if not question or not segments:
@@ -55,9 +56,10 @@ def _parse(question: str) -> list[str]:
 def _flatten(
     segments: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], str, list[int]]:
-    """拼接 token 文本，返回可用 token 列表、拼接串与各 token 的起始下标。
+    """Concatenate token texts; return usable tokens, the string and each start offset.
 
-    跳过无文本或时间戳非法的 token，使关键词命中与句段合并看到同一批 token。
+    Tokens without text or with invalid timestamps are skipped so keyword hits and
+    sentence grouping see the same token set.
     """
     tokens: list[dict[str, Any]] = []
     pieces: list[str] = []
@@ -81,7 +83,7 @@ def _timestamps_valid(segment: dict[str, Any]) -> bool:
 
 
 def _token_at(offsets: list[int], position: int) -> int:
-    """拼接串下标落在第几个 token 上。"""
+    """Return the index of the token covering a position in the concatenated string."""
     index = bisect.bisect_right(offsets, position) - 1
     return max(0, min(len(offsets) - 1, index))
 
@@ -90,7 +92,7 @@ def with_sentence_index(
     matched: list[dict[str, Any]],
     sentences: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """给命中项标注所在句段序号（1 起），便于直接跳到对应句段。"""
+    """Annotate each hit with the segment index (1-based) it belongs to."""
     located: list[dict[str, Any]] = []
     for item in matched:
         hit = dict(item)

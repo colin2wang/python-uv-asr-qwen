@@ -1,4 +1,4 @@
-"""服务配置的数据结构定义（仅声明结构，不含任何默认值）。"""
+"""Configuration data structures (structure only, no defaults are provided here)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from pathlib import Path
 
 
 class ConfigError(ValueError):
-    """配置文件缺失、字段缺失或类型错误。"""
+    """Raised when the config file, a section, or a value is missing or mistyped."""
 
 
 @dataclass(frozen=True, slots=True)
 class ModelSettings:
-    """Qwen3-ASR 主体与强制对齐模型。"""
+    """Qwen3-ASR main model and its forced aligner."""
 
     asr_path: Path
     aligner_path: Path
@@ -23,7 +23,7 @@ class ModelSettings:
 
 @dataclass(frozen=True, slots=True)
 class LidSettings:
-    """SenseVoice 语种识别模型。"""
+    """SenseVoice language identification model."""
 
     enabled: bool
     model_path: Path
@@ -33,7 +33,7 @@ class LidSettings:
 
 @dataclass(frozen=True, slots=True)
 class VadSettings:
-    """基于能量的语音活动检测参数。"""
+    """Energy-based voice activity detection parameters."""
 
     frame_ms: int
     hop_ms: int
@@ -44,7 +44,7 @@ class VadSettings:
 
 @dataclass(frozen=True, slots=True)
 class AudioSettings:
-    """音频采样与分块参数。"""
+    """Audio sampling and chunking parameters."""
 
     sample_rate: int
     max_chunk_seconds: int
@@ -52,7 +52,7 @@ class AudioSettings:
 
 @dataclass(frozen=True, slots=True)
 class SentenceSettings:
-    """句段合并：断句停顿阈值与兜底上限（为 0 表示不生效）。"""
+    """Sentence segmentation: pause threshold plus caps (0 disables an option)."""
 
     min_gap_seconds: float
     max_chars: int
@@ -61,7 +61,7 @@ class SentenceSettings:
 
 @dataclass(frozen=True, slots=True)
 class LlmSettings:
-    """标题拆分的 LLM 接入参数。"""
+    """LLM connection parameters used for title splitting."""
 
     base_url: str
     model: str
@@ -71,7 +71,7 @@ class LlmSettings:
 
 @dataclass(frozen=True, slots=True)
 class TitleSettings:
-    """标题拆分策略参数。"""
+    """Title splitting strategy parameters."""
 
     llm: LlmSettings
     max_chars: int
@@ -80,7 +80,7 @@ class TitleSettings:
 
 @dataclass(frozen=True, slots=True)
 class ServerSettings:
-    """HTTP 服务参数。"""
+    """HTTP server parameters."""
 
     title: str
     version: str
@@ -92,7 +92,7 @@ class ServerSettings:
 
 @dataclass(frozen=True, slots=True)
 class Settings:
-    """完整配置。"""
+    """Complete configuration."""
 
     config_path: Path
     base_dir: Path

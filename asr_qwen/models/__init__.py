@@ -1,4 +1,4 @@
-"""模型层：ASR 与语种识别模型的加载与持有。"""
+"""Model layer: loading and owning the ASR and language identification models."""
 
 from .registry import ModelRegistry
 

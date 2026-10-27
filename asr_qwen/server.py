@@ -1,4 +1,4 @@
-"""进程入口：加载配置并通过 uvicorn 启动服务。"""
+"""Process entry point: load configuration and serve through uvicorn."""
 
 from __future__ import annotations
 
@@ -9,11 +9,12 @@ import uvicorn
 from .api.app import create_app
 from .config.loader import load_settings
 
-# qwen_asr 调用 generate 时带了 generation_config 不支持的 temperature，transformers
-# 会逐次告警；默认压掉这条噪音，排查时可用环境变量 TRANSFORMERS_VERBOSITY=info 覆盖
+# qwen_asr passes a `temperature` generation flag that the generation config does not
+# support, and transformers warns on every inference. Silence it by default; set
+# TRANSFORMERS_VERBOSITY=info to see the details again.
 os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
 
-# 供 `uvicorn <package>.server:app` 使用；配置在导入时读取
+# Used by `uvicorn <package>.server:app`; configuration is read at import time
 app = create_app()
 
 

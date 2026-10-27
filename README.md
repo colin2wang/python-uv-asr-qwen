@@ -10,16 +10,17 @@ and a title/body split.
 ## Features
 
 - **Multi-language transcription** with Qwen3-ASR-1.7B (roughly 30 languages) on GPU.
-- **Segment splitting**: forced-aligner tokens are merged into segments capped by
-  `sentence.max_chars` / `sentence.max_duration_seconds` — the aligner token stream
-  carries **no punctuation** (punctuation only exists in the full text), so length and
-  duration are the reliable boundaries. Segments also break at sentence-ending
-  punctuation, and optionally on inter-token pauses via
-  `sentence.min_gap_seconds` (default `0`, off — sung vocals drag notes and produce
-  one-second fragments). Every segment carries `start` / `end`. Invalid tokens are
-  repaired by interpolation. Latin tokens are word-level and carry no spaces, so
-  merging re-inserts them by script rule (between English words and at CJK/Latin
-  boundaries, never inside CJK or around punctuation).
+- **Segments keep the original punctuation**: segment text comes from the model's full
+  text (punctuation and spaces copied verbatim) while timestamps come from aligning
+  that text with the token stream (`difflib` sequence matching; punctuation and
+  whitespace consume no token, so normalization differences only cost a few characters
+  their timestamp instead of desynchronizing everything). Segments break on
+  sentence-ending punctuation and on the `sentence.max_chars` /
+  `sentence.max_duration_seconds` caps — the aligner token stream carries **no
+  punctuation**, so the caps are the fallback when the transcript has none — plus
+  optional inter-token pauses via `sentence.min_gap_seconds` (default `0`, off: sung
+  vocals drag notes and produce one-second fragments). Every segment carries
+  `start` / `end`. Invalid token timestamps are repaired by interpolation.
 - **Automatic language detection**: the model's own language output, plus a
   script-voting second pass for sung audio (Cyrillic / Han / Kana / Hangul), plus a
   Cantonese-character heuristic that promotes `Chinese` to `Cantonese`.

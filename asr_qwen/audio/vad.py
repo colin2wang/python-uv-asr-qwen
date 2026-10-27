@@ -1,4 +1,4 @@
-"""基于能量的语音活动检测与静音点分块。"""
+"""Energy-based voice activity detection and silence-boundary chunking."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import torch
 
 from ..config.settings import VadSettings
 
-# 每批参与能量计算的帧数：长音频分批处理，避免一次性展开出超大矩阵
+# Frames per energy batch: long audio is processed in batches to bound peak memory
 _FRAMES_PER_BATCH = 4096
 
 
 def _frame_energies(mono: torch.Tensor, frame: int, hop: int) -> torch.Tensor:
-    """逐帧 RMS 能量（dBFS）：向量化滑动窗口，按批计算以限制峰值内存。"""
+    """Per-frame RMS energy in dBFS: vectorized sliding windows, computed in batches."""
     usable = mono.shape[0]
     if usable < frame:
         return torch.empty(0, dtype=torch.float32)
@@ -31,7 +31,7 @@ def detect_speech_segments(
     sample_rate: int,
     settings: VadSettings,
 ) -> list[tuple[int, int]]:
-    """返回语音片段列表，元素为 (起始样本, 结束样本)。"""
+    """Return speech runs as (start sample, end sample) pairs."""
     frame = int(sample_rate * settings.frame_ms / 1000)
     hop = int(sample_rate * settings.hop_ms / 1000)
 
@@ -66,10 +66,11 @@ def chunk_by_silence(
     segments: list[tuple[int, int]],
     max_samples: int,
 ) -> list[tuple[int, int]]:
-    """在静音边界处把语音片段合并成不超过 max_samples 的块。
+    """Merge speech runs into chunks of at most max_samples at silence boundaries.
 
-    合并后仍超过上限的单段按上限切片：切点未必落在静音处，但保证每块都不超长，
-    避免长语音（如连续说话几分钟）一次性送进模型。
+    A single run longer than the limit is sliced at the limit: the cut no longer falls
+    on silence, but every chunk stays within the model's input length budget instead of
+    sending several minutes of continuous speech in one call.
     """
     packed: list[tuple[int, int]] = []
     current: list[int] | None = None

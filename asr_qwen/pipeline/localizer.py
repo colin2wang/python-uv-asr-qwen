@@ -1,4 +1,4 @@
-"""端到端编排：语种判定 → 转写 → 句段/关键词/标题后处理。"""
+"""End-to-end orchestration: language → transcription → sentences/keywords/title."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from ..text.title import TitleSplitter
 from .progress import ProgressReporter
 from .transcribe import transcribe_audio
 
-# 脚本投票在 language 阶段内占的比例，其余留给投票后的二次转写
+# Share of the language stage spent on script voting; the rest belongs to re-transcription
 _SCRIPT_VOTE_RATIO = 0.6
 
 
@@ -37,7 +37,7 @@ def localize(
     language: str | None,
     progress: ProgressReporter | None = None,
 ) -> dict[str, Any]:
-    """转写音频并返回语言、全文、句段、关键词命中与标题正文。"""
+    """Transcribe audio and return language, text, segments, keyword hits and title."""
     started = time.perf_counter()
     model = registry.asr
     requested_language = normalize_language(language)
@@ -47,13 +47,14 @@ def localize(
         model, settings, audio_path, mono, sample_rate, requested_language, progress=progress
     )
 
-    # 若判成拉丁语言且未显式指定，用脚本投票兜底（唱歌的非拉丁语）
+    # Latin output with no explicit request: fall back to script voting (sung non-Latin)
     if not requested_language and transcript.language in LATIN_LANGUAGES:
         if progress:
             progress.advance("language", _SCRIPT_VOTE_RATIO / 3)
         voted = detect_language_by_script(model, mono, sample_rate, settings.lid.segment_seconds)
         if voted and voted not in LATIN_LANGUAGES:
-            # 二次转写的进度映射进 language 阶段尾部，整体进度因此不会倒退
+            # Map the re-transcription into the tail of the language stage so the
+            # overall progress cannot move backwards
             retranscribe = (
                 progress.subrange(_SCRIPT_VOTE_RATIO, 1.0, alias="language") if progress else None
             )
@@ -78,6 +79,7 @@ def localize(
             max_chars=settings.sentence.max_chars,
             max_duration_seconds=settings.sentence.max_duration_seconds,
             min_gap_seconds=settings.sentence.min_gap_seconds,
+            text=transcript.text,
         )
     )
     if progress:

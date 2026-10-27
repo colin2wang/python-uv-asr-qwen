@@ -1,4 +1,4 @@
-"""文本处理层：句段合并、关键词定位与标题拆分。"""
+"""Text layer: sentence grouping, keyword localization and title splitting."""
 
 from .keywords import find_keywords, with_sentence_index
 from .sentences import merge_to_sentences, number_segments

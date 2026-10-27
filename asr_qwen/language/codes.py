@@ -1,6 +1,6 @@
-"""语种识别相关的常量映射表。"""
+"""Constant lookup tables for language identification."""
 
-# SenseVoice 语言标签 → Qwen3-ASR 语言名（仅映射 Qwen3-ASR 支持的 30 语言）
+# SenseVoice language tag -> Qwen3-ASR language name (only the 30 supported languages)
 SENSEVOICE_TO_QWEN = {
     "zh": "Chinese", "en": "English", "yue": "Cantonese", "ja": "Japanese",
     "ko": "Korean", "ru": "Russian", "de": "German", "fr": "French",
@@ -32,16 +32,16 @@ LANGUAGE_BY_CODE = {
     "yue": "Cantonese", "cantonese": "Cantonese",
 }
 
-# 拉丁字母语系（字符集无法区分）
+# Languages written in Latin script (indistinguishable by character set alone)
 LATIN_LANGUAGES = {
     "English", "German", "French", "Spanish", "Italian", "Portuguese",
     "Dutch", "Swedish", "Danish", "Finnish", "Polish", "Czech",
     "Romanian", "Hungarian", "Indonesian", "Malay", "Vietnamese", "Filipino",
 }
 
-# 非拉丁语脚本候选（唱歌时模型对多个强制语言输出同一个母语脚本）
+# Non-Latin script candidates (when singing, forced languages all yield the native script)
 SCRIPT_CANDIDATES = ["Russian", "Chinese", "Japanese", "Korean"]
 SCRIPT_TO_LANGUAGE = {"Cyrillic": "Russian", "Han": "Chinese", "Kana": "Japanese", "Hangul": "Korean"}
 
-# 粤语专用字（几乎不出现在普通话中）
+# Characters specific to Cantonese (rarely appear in Mandarin); input data, not copy
 CANTONESE_CHARS = set("嘅唔咗哋佢乜冇啲喺嚟嘢瞓冧掂啱乸揾喎㗎啩攞嘥嬲咁揸嚿")

@@ -1,4 +1,4 @@
-"""从 asr-qwen.yml 读取并校验配置，不在代码中提供任何默认值。"""
+"""Read and validate asr-qwen.yml; no default values live in code."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ PROJECT_ROOT = PACKAGE_ROOT.parent
 
 
 def default_config_candidates() -> list[Path]:
-    """默认查找顺序：项目根目录 > 包目录 > 当前工作目录。"""
+    """Default lookup order: project root > package directory > current directory."""
     return [
         PROJECT_ROOT / CONFIG_FILE_NAME,
         PACKAGE_ROOT / CONFIG_FILE_NAME,
@@ -38,7 +38,7 @@ def default_config_candidates() -> list[Path]:
 
 
 def resolve_config_path(path: str | Path | None = None) -> Path:
-    """定位配置文件：显式参数 > ASR_CONFIG_PATH 环境变量 > 默认查找顺序中第一个存在的文件。"""
+    """Locate the config file: explicit arg > ASR_CONFIG_PATH > first existing candidate."""
     if path is not None:
         return Path(path).expanduser()
     from_env = os.environ.get(CONFIG_PATH_ENV)
@@ -52,13 +52,13 @@ def resolve_config_path(path: str | Path | None = None) -> Path:
 
 
 def load_settings(path: str | Path | None = None) -> Settings:
-    """读取配置文件并构建 Settings。"""
+    """Read the configuration file and build Settings."""
     config_path = resolve_config_path(path)
     return build_settings(_read_yaml(config_path), config_path)
 
 
 def build_settings(data: Mapping[str, Any], config_path: Path) -> Settings:
-    """把已解析的 YAML 映射转换为 Settings。"""
+    """Convert a parsed YAML mapping into Settings."""
     source = config_path
     base_dir = config_path.parent
 
@@ -127,13 +127,16 @@ def build_settings(data: Mapping[str, Any], config_path: Path) -> Settings:
 def _read_yaml(path: Path) -> Mapping[str, Any]:
     if not path.is_file():
         searched = "、".join(str(candidate) for candidate in default_config_candidates())
-        raise ConfigError(f"配置文件不存在: {path}（已查找: {searched}，也可通过 {CONFIG_PATH_ENV} 指定）")
+        raise ConfigError(
+            f"Config file not found: {path} (searched: {searched}; "
+            f"{CONFIG_PATH_ENV} can point at one explicitly)"
+        )
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
-        raise ConfigError(f"{path}: YAML 解析失败: {exc}") from exc
+        raise ConfigError(f"{path}: failed to parse YAML: {exc}") from exc
     if not isinstance(data, Mapping):
-        raise ConfigError(f"{path}: 配置文件的顶层必须是映射")
+        raise ConfigError(f"{path}: the top level of the config must be a mapping")
     return data
 
 
@@ -144,20 +147,20 @@ def _dotted(prefix: str, key: str) -> str:
 def _section(parent: Mapping[str, Any], key: str, prefix: str, source: Path) -> Mapping[str, Any]:
     dotted = _dotted(prefix, key)
     if key not in parent:
-        raise ConfigError(f"{source}: 缺少配置段 {dotted}")
+        raise ConfigError(f"{source}: missing config section {dotted}")
     value = parent[key]
     if not isinstance(value, Mapping):
-        raise ConfigError(f"{source}: 配置段 {dotted} 必须是映射")
+        raise ConfigError(f"{source}: config section {dotted} must be a mapping")
     return value
 
 
 def _raw(parent: Mapping[str, Any], key: str, prefix: str, source: Path) -> tuple[str, Any]:
     dotted = _dotted(prefix, key)
     if key not in parent:
-        raise ConfigError(f"{source}: 缺少配置项 {dotted}")
+        raise ConfigError(f"{source}: missing config key {dotted}")
     value = parent[key]
     if value is None:
-        raise ConfigError(f"{source}: 配置项 {dotted} 不能为空")
+        raise ConfigError(f"{source}: config key {dotted} must not be empty")
     return dotted, value
 
 
@@ -171,31 +174,31 @@ def _as_str(
 ) -> str:
     dotted, value = _raw(parent, key, prefix, source)
     if not isinstance(value, str):
-        raise ConfigError(f"{source}: 配置项 {dotted} 必须是字符串")
+        raise ConfigError(f"{source}: config key {dotted} must be a string")
     value = value.strip()
     if not value and not allow_empty:
-        raise ConfigError(f"{source}: 配置项 {dotted} 不能为空字符串")
+        raise ConfigError(f"{source}: config key {dotted} must not be an empty string")
     return value
 
 
 def _as_bool(parent: Mapping[str, Any], key: str, prefix: str, source: Path) -> bool:
     dotted, value = _raw(parent, key, prefix, source)
     if not isinstance(value, bool):
-        raise ConfigError(f"{source}: 配置项 {dotted} 必须是布尔值")
+        raise ConfigError(f"{source}: config key {dotted} must be a boolean")
     return value
 
 
 def _as_int(parent: Mapping[str, Any], key: str, prefix: str, source: Path) -> int:
     dotted, value = _raw(parent, key, prefix, source)
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ConfigError(f"{source}: 配置项 {dotted} 必须是整数")
+        raise ConfigError(f"{source}: config key {dotted} must be an integer")
     return value
 
 
 def _as_float(parent: Mapping[str, Any], key: str, prefix: str, source: Path) -> float:
     dotted, value = _raw(parent, key, prefix, source)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ConfigError(f"{source}: 配置项 {dotted} 必须是数字")
+        raise ConfigError(f"{source}: config key {dotted} must be a number")
     return float(value)
 
 

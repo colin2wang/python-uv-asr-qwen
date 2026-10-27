@@ -1,4 +1,4 @@
-"""应用运行时上下文：配置 + 模型注册表。"""
+"""Runtime application context: settings plus the model registry."""
 
 from __future__ import annotations
 

@@ -29,7 +29,7 @@ Qwen3-ASR 语音转写定位服务（Python ≥3.12 + FastAPI），uv 管理依�
 - **转写输出结构**：`pipeline/localizer.py` 返回 `language`、`duration`、`title`、`body`、`text`、`segments`、`matched`、`stats`；`segments` 每项为 `index/text/start/end/duration`（序号从 1 起），`matched` 每项为 `rule/start/end/timestamp/segment_index/confidence`。改动输出结构需同步改 `localizer.py`、`text/keywords.py`、`text/sentences.py`、`api/testui.py` 与两份 README。
 - **拼接与定位都以 token 流为准**：对齐 token 是唯一事实来源，拉丁语言 token 为词级且不含空格，`text/sentences.py` 负责按脚本规则补空格（`_needs_space`），`text/keywords.py` 在 token 拼接串上做匹配并以二分定位 token 下标。不要改回「用 `result.text` 的字符下标索引 token」——全文含空格与规范化差异，英文下会整体错位。
 - **整段转写，不切块**：`pipeline/transcribe.py` 默认把整段音频一次送入模型；只有 `audio.max_chunk_seconds > 0`（当前为 0）才走 `audio/vad.py` 的 VAD 分块。分块会把跨块句子从中间切断，且每块独立转写会丢失上下文、丢掉句末标点，进而让句段合并分不出句子——不要默认打开分块。
-- **句段切分以长度/时长上限为主**（与参考实现 `sample-asr/sentence_segments.py` 一致）：对齐 token 流不含标点（标点只存在于 `result.text`），唱歌音频尤其如此，所以 `sentence.max_chars: 80` / `max_duration_seconds: 12.0` 是主要切分依据；句末标点（`_ends_sentence`）与时间戳倒流也会断句；`sentence.min_gap_seconds`（当前 0，关闭）可按 token 停顿断句，但唱歌拖腔会产生 1 秒级碎片，不要默认打开。每段输出 `index/start/end/duration`。输入侧保持整段转写不分块（`audio.max_chunk_seconds: 0`），分块才是"句子被切开"的根源。
+- **句段文本取自模型全文**：`text/sentences.py` 的 `_merge_from_text` 以 `result.text` 为骨架（标点与空白照抄、不消耗 token），时间戳由 `_align_timestamps` 用 `difflib.SequenceMatcher` 把全文单元与 token 序列对齐得到——对齐 token 流不含标点，这是句段能带标点的唯一来源。切分依据：句末标点（`_ends_sentence`）、`sentence.max_chars: 80` / `max_duration_seconds: 12.0` 上限（全文无标点时靠它切分，与参考实现 `sample-asr/sentence_segments.py` 的 80/12 一致）、时间戳倒流；`sentence.min_gap_seconds`（当前 0，关闭）可按停顿断句，唱歌拖腔会产生碎片，不要默认打开。每段输出 `index/text/start/end/duration`。输入侧保持整段转写不分块（`audio.max_chunk_seconds: 0`），分块才是"句子被切开"的根源。
 
 ## 维护规则
 

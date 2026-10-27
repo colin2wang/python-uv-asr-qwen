@@ -1,4 +1,4 @@
-"""HTTP 接口：健康检查与转写定位。"""
+"""HTTP endpoints: health check and transcription localization."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def _run_job(
     question: Optional[str],
     language: Optional[str],
 ) -> None:
-    """后台线程执行转写，进度与结果写入进度登记表。"""
+    """Run transcription on a worker thread; progress and result go to the job table."""
     settings = context.settings
     reporter = ProgressReporter(job_id)
     try:
@@ -112,7 +112,7 @@ async def create_localize_job(
     question: Optional[str] = Form(None),
     language: Optional[str] = Form(None),
 ) -> dict[str, Any]:
-    """创建异步转写任务，立即返回任务 ID；进度与结果经 GET /asr/jobs/{job_id} 查询。"""
+    """Create a background job and return its id; poll GET /asr/jobs/{job_id} for progress."""
     context = _context(request)
     if not context.registry.ready:
         raise HTTPException(503, "model not loaded")
@@ -130,7 +130,7 @@ async def create_localize_job(
 
 @router.get("/asr/jobs/{job_id}")
 def localize_job_status(job_id: str) -> dict[str, Any]:
-    """查询异步任务进度；status=done 时附带 result，error 时附带 error 信息。"""
+    """Query job progress; `result` is present when done, `error` when it failed."""
     job = get_job(job_id)
     if job is None:
         raise HTTPException(404, "job not found")
